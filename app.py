@@ -15,10 +15,11 @@ import sys, os
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from agents.agent_os      import OSDataAgent, OS_COLUMNS, DB_COLUMNS
-from agents.agent_db      import RecommendationAgent
-from agents.agent_refresh import RefreshAgent
-from utils.excel_export   import export_to_excel
+from agents.agent_os        import OSDataAgent, OS_COLUMNS, DB_COLUMNS
+from agents.agent_db        import RecommendationAgent
+from agents.agent_refresh   import RefreshAgent
+from agents.agent_versioning import VersionGuardianAgent
+from utils.excel_export     import export_to_excel
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -75,6 +76,7 @@ def _init():
         "db_df":         pd.DataFrame(columns=DB_COLUMNS),
         "last_refresh":  None,
         "a1_status":     "idle",
+        "a1_phase":      "idle",   # idle | fetching_os | fetching_db | done | error
         "a2_status":     "idle",
         "changes_log":   [],
         "old_os_df":     None,
@@ -86,7 +88,9 @@ def _init():
             st.session_state[k] = v
 
 _init()
-refresh_agent = RefreshAgent()
+refresh_agent  = RefreshAgent()
+version_agent  = VersionGuardianAgent()
+version_agent.init_session()
 
 
 def badge(status: str) -> str:
@@ -127,12 +131,12 @@ with st.sidebar:
     <b>🔍 Agent 1 — Live Data Fetcher</b><br>
     {badge(st.session_state.a1_status)}
     <small style="display:block;margin-top:4px;color:#666">
-    Fetches ALL OS & DB lifecycle data from the internet — no hardcoded baseline</small>
+    Fetches ALL <b>Server OS</b> &amp; DB lifecycle data from the internet — no hardcoded baseline</small>
     </div>""", unsafe_allow_html=True)
 
     run_a1 = st.button("▶ Run Agent 1 — Fetch All Data", use_container_width=True,
                         disabled=not key_ok,
-                        help="Searches ~18 OS families and ~20 DB products via Claude AI web search")
+                        help="Searches ~18 Server OS families and ~20 DB products via Claude AI web search")
 
     st.caption("⏱ Estimated time: 3–6 minutes (38 web searches)")
     st.divider()
@@ -170,6 +174,17 @@ with st.sidebar:
     )
 
     st.divider()
+
+    # Agent 4
+    st.markdown("""<div class="agent-card" style="border-color:#10B981;">
+    <b>🛡️ Agent 4 — Version Guardian</b>
+    <small style="display:block;margin-top:4px;color:#666">
+    Snapshots data before every refresh · appends new data · never overwrites</small>
+    </div>""", unsafe_allow_html=True)
+
+    version_agent.render_status_card()
+
+    st.divider()
     os_recs = (st.session_state.os_df["Recommendation"] != "").sum() if not os_empty else 0
     db_recs = (st.session_state.db_df["Recommendation"] != "").sum() if not db_empty else 0
     st.caption(f"📊 OS: **{len(st.session_state.os_df)}** rows · DB: **{len(st.session_state.db_df)}** rows")
@@ -181,7 +196,7 @@ st.markdown("""
 <div class="infy-header">
   <h1>🖥️ INFY Migration Version Lifecycle Tracker</h1>
   <p>Infosys Enterprise Architecture &nbsp;·&nbsp;
-     Live AI-Powered OS &amp; Database Lifecycle Intelligence &nbsp;·&nbsp;
+     Live AI-Powered <strong>Server OS</strong> &amp; Database Lifecycle Intelligence &nbsp;·&nbsp;
      All data fetched dynamically from the internet &nbsp;·&nbsp;
      Powered by Claude AI (Anthropic)</p>
 </div>
@@ -201,7 +216,14 @@ if (refresh_agent.is_refresh_due(st.session_state.last_refresh)
         db_count=len(st.session_state.db_df)
     )
     if approved:
-        # Reset statuses so user knows to re-run
+        # Agent 4: snapshot current data BEFORE refresh overwrites it
+        if not st.session_state.os_df.empty or not st.session_state.db_df.empty:
+            snap_ver = version_agent.snapshot_before_refresh(
+                st.session_state.os_df,
+                st.session_state.db_df,
+                st.session_state.get("changes_log", [])
+            )
+            st.toast(f"🛡️ Agent 4 saved snapshot v{snap_ver} before refresh.", icon="💾")
         st.session_state.a1_status = "idle"
         st.session_state.a2_status = "idle"
         st.toast("✅ Refresh approved — click 'Run Agent 1' in the sidebar to start.", icon="🔄")
@@ -210,13 +232,14 @@ if (refresh_agent.is_refresh_due(st.session_state.last_refresh)
 # ── Run Agent 1 ────────────────────────────────────────────────────────────────
 if run_a1:
     st.session_state.a1_status = "running"
+    st.session_state.a1_phase  = "fetching_os"
     st.session_state.old_os_df = st.session_state.os_df.copy() if not st.session_state.os_df.empty else None
     st.session_state.old_db_df = st.session_state.db_df.copy() if not st.session_state.db_df.empty else None
 
     agent1 = OSDataAgent(api_key=api_key)
 
     st.info("🔍 **Agent 1** is now searching the internet for all OS and DB lifecycle data. "
-            "This will run ~38 searches. Progress shown below.")
+            "This will run ~40 searches. Progress shown below.")
 
     os_prog   = st.progress(0, text="Starting OS data fetch...")
     os_status = st.empty()
@@ -227,12 +250,15 @@ if run_a1:
 
     try:
         new_os = agent1.fetch_all_os_data(progress_callback=a1_os_cb)
-        st.session_state.os_df = new_os
+        st.session_state.os_df    = new_os
+        st.session_state.a1_phase = "fetching_db"
         os_status.caption(f"✅ OS fetch complete — **{len(new_os)} versions** across all OS families")
     except Exception as e:
         st.error(f"❌ OS fetch error: {e}")
         st.session_state.a1_status = "error"
+        st.session_state.a1_phase  = "error"
 
+    st.session_state.a1_phase = "fetching_db"
     db_prog   = st.progress(0, text="Starting DB data fetch...")
     db_status = st.empty()
 
@@ -242,11 +268,13 @@ if run_a1:
 
     try:
         new_db = agent1.fetch_all_db_data(progress_callback=a1_db_cb)
-        st.session_state.db_df = new_db
+        st.session_state.db_df    = new_db
+        st.session_state.a1_phase = "done"
         db_status.caption(f"✅ DB fetch complete — **{len(new_db)} versions** across all DB products")
     except Exception as e:
         st.error(f"❌ DB fetch error: {e}")
         st.session_state.a1_status = "error"
+        st.session_state.a1_phase  = "error"
 
     # Change detection
     changes = []
@@ -260,9 +288,30 @@ if run_a1:
 
     if st.session_state.a1_status != "error":
         st.session_state.a1_status = "done"
+        st.session_state.a1_phase  = "done"
+
+        # Agent 4: merge new data with any existing data (append, never overwrite)
+        if st.session_state.old_os_df is not None or st.session_state.old_db_df is not None:
+            old_os = st.session_state.old_os_df if st.session_state.old_os_df is not None else pd.DataFrame(columns=OS_COLUMNS)
+            old_db = st.session_state.old_db_df if st.session_state.old_db_df is not None else pd.DataFrame(columns=DB_COLUMNS)
+            merged_os, merged_db = version_agent.append_new_data(
+                old_os, st.session_state.os_df,
+                old_db, st.session_state.db_df
+            )
+            st.session_state.os_df = merged_os
+            st.session_state.db_df = merged_db
+
+        # Agent 4: record this as the latest version in history
+        new_ver = version_agent.record_new_version(
+            st.session_state.os_df,
+            st.session_state.db_df,
+            changes
+        )
+
         st.success(
             f"✅ **Agent 1 complete!** Fetched **{len(st.session_state.os_df)} OS entries** "
-            f"and **{len(st.session_state.db_df)} DB entries** from the web."
+            f"and **{len(st.session_state.db_df)} DB entries** from the web.\n\n"
+            f"🛡️ **Agent 4** recorded this as version **v{new_ver}** in history."
             + (f"\n\n📋 **{len(changes)} data changes detected** since last refresh." if changes else "")
         )
 
@@ -313,19 +362,34 @@ if run_a2:
 
 
 # ── Tabs ───────────────────────────────────────────────────────────────────────
-tab_os, tab_db, tab_status = st.tabs(["🖥️ OS Versions", "🗄️ DB Versions", "📋 Agent Status & Log"])
+tab_os, tab_db, tab_status, tab_history = st.tabs([
+    "🖥️ OS Versions", "🗄️ DB Versions",
+    "📋 Agent Status & Log", "🛡️ Version History"
+])
 
 
 # ────────────────── Tab 1: OS Versions ────────────────────────────────────────
 with tab_os:
-    os_df = st.session_state.os_df
+    os_df   = st.session_state.os_df
+    a1_phase = st.session_state.get("a1_phase", "idle")
 
-    if os_df.empty:
+    if os_df.empty and a1_phase in ("fetching_os", "fetching_db", "running"):
         st.markdown("""
         <div class="empty-state">
-          <h3>No OS data yet</h3>
-          <p>Run <strong>Agent 1</strong> from the sidebar to fetch all OS lifecycle data from the internet.<br>
-          Covers Windows, RHEL, Ubuntu, SLES, Debian, macOS, Solaris, AIX, HP-UX, FreeBSD and more.</p>
+          <h3>⏳ Agent 1 is fetching OS data...</h3>
+          <p>OS lifecycle data is being searched and collected right now.<br>
+          This tab will populate automatically once the OS fetch phase completes.<br>
+          <em>Watch the progress bar above for live updates.</em></p>
+        </div>""", unsafe_allow_html=True)
+        st.spinner("Fetching OS data from the internet...")
+    elif os_df.empty:
+        st.markdown("""
+        <div class="empty-state">
+          <h3>No Server OS data yet</h3>
+          <p>Run <strong>Agent 1</strong> from the sidebar to fetch all <strong>Server OS</strong> lifecycle data from the internet.<br>
+          Covers Windows Server, RHEL, Ubuntu Server LTS, SLES, Debian, CentOS, Rocky Linux, AlmaLinux,
+          Oracle Linux, openSUSE Leap, Fedora Server, Solaris, AIX, HP-UX, FreeBSD, OpenVMS and Tru64.<br>
+          <em>Client OS (Windows 10/11, macOS, Android, iOS) is intentionally excluded.</em></p>
         </div>""", unsafe_allow_html=True)
     else:
         # Metrics
@@ -399,9 +463,39 @@ with tab_os:
 
 # ────────────────── Tab 2: DB Versions ────────────────────────────────────────
 with tab_db:
-    db_df = st.session_state.db_df
+    db_df    = st.session_state.db_df
+    a1_phase = st.session_state.get("a1_phase", "idle")
 
-    if db_df.empty:
+    if db_df.empty and a1_phase == "fetching_db":
+        # DB fetch is actively running right now
+        st.markdown("""
+        <div class="empty-state" style="border-color:#F59E0B;">
+          <h3>⏳ Agent 1 is fetching DB data now...</h3>
+          <p>OS data fetch is complete. Database lifecycle data is now being collected.<br>
+          Searching SQL Server · Oracle · PostgreSQL · MySQL · MariaDB · MongoDB · Redis ·
+          Cassandra · Elasticsearch · SAP HANA · Teradata · Aurora · RDS · Neo4j · InfluxDB ·
+          Snowflake · Databricks · Azure SQL · Cosmos DB and more.<br><br>
+          <strong>This tab will populate as soon as all 20 DB searches complete.</strong></p>
+        </div>""", unsafe_allow_html=True)
+        st.info("🔍 DB fetch in progress — check the progress bar above for live status.")
+
+    elif db_df.empty and a1_phase == "fetching_os":
+        # Still on OS phase, DB hasn't started yet
+        st.markdown("""
+        <div class="empty-state" style="border-color:#0EA5E9;">
+          <h3>⏳ Agent 1 is fetching OS data first...</h3>
+          <p>OS lifecycle data is being collected. DB fetch will start automatically once OS is done.<br>
+          <em>Please wait — DB data will appear here shortly.</em></p>
+        </div>""", unsafe_allow_html=True)
+
+    elif db_df.empty and a1_phase in ("running",):
+        st.markdown("""
+        <div class="empty-state" style="border-color:#0EA5E9;">
+          <h3>⏳ Agent 1 is running...</h3>
+          <p>DB data will appear here once Agent 1 completes the database fetch phase.</p>
+        </div>""", unsafe_allow_html=True)
+
+    elif db_df.empty:
         st.markdown("""
         <div class="empty-state">
           <h3>No DB data yet</h3>
@@ -473,7 +567,18 @@ with tab_db:
         )
 
 
-# ────────────────── Tab 3: Agent Status ───────────────────────────────────────
+with tab_history:
+    st.subheader("🛡️ Version History — Agent 4")
+    st.caption(
+        "Every time Agent 3 approves a refresh, Agent 4 snapshots the current data "
+        "before Agent 1 runs. New data is then **appended** rather than overwriting. "
+        "All versions are available here and included in the Excel download."
+    )
+    st.divider()
+    version_agent.render_history_viewer()
+
+
+# ── Tab 3: Agent Status ───────────────────────────────────────────────────────
 with tab_status:
     st.subheader("🤖 Agent Activity Dashboard")
 
@@ -484,10 +589,11 @@ with tab_status:
         icon1 = {"idle":"⚪","running":"🔵","done":"✅","error":"❌"}.get(s1,"⚪")
         st.markdown(f"""**{icon1} Agent 1 — Live Data Fetcher**
 - Status: `{s1.upper()}`
-- Fetches ALL OS & DB lifecycle data from the web
+- Fetches ALL **Server OS** & DB lifecycle data from the web
 - Tool: Claude AI + web\\_search (38 searches total)
-- OS families: Windows, RHEL, Ubuntu, SLES, Debian, CentOS, Rocky/Alma, Oracle Linux, openSUSE, Fedora, macOS, Solaris, AIX, HP-UX, FreeBSD, OpenVMS, Android, iOS
-- DB products: SQL Server, Oracle, PostgreSQL, MySQL, MariaDB, MongoDB, Redis, Db2, Cassandra, Elasticsearch, SAP HANA, SAP ASE, Teradata, Aurora, RDS, CouchDB, Couchbase, Neo4j, InfluxDB, Snowflake, Azure SQL + more""")
+- **Server OS families (18):** Windows Server 2003–2025, RHEL 4–10, Ubuntu Server LTS 14.04–24.04, SLES 11–16 all SPs, Debian 8–13, CentOS 6–Stream 10, Rocky Linux 8–10, AlmaLinux 8–10, Oracle Linux 6–10, SLES for SAP, openSUSE Leap, Fedora Server, Oracle Solaris 10/11, IBM AIX 6.1–7.3 TL, HP-UX 11i, FreeBSD 11–15, OpenVMS, Tru64 UNIX
+- **DB products (20):** SQL Server, Oracle DB, PostgreSQL, MySQL, MariaDB, MongoDB, Redis, Db2, Cassandra, Elasticsearch, SAP HANA, SAP ASE, Teradata, Aurora, RDS, CouchDB/Couchbase, Neo4j, InfluxDB/TimescaleDB, Snowflake/Databricks, Azure SQL/Cosmos DB
+- *Client OS excluded: Windows 10/11, macOS, Android, iOS*""")
 
     s2 = st.session_state.a2_status
     with ca2:
@@ -512,6 +618,20 @@ with tab_status:
 - Last refresh: {last_str}
 - Next refresh: {f"In {days_left} days" if last_r else "After first Agent 1 run"}
 - Behaviour: Shows permission banner → user approves → re-runs Agents 1 & 2""")
+
+    # Agent 4
+    ca4, _, _ = st.columns(3)
+    vcount = version_agent.get_version_count()
+    latest = version_agent.get_latest()
+    icon4  = "✅" if vcount > 0 else "⚪"
+    with ca4:
+        st.markdown(f"""**{icon4} Agent 4 — Version Guardian**
+- Status: `{"ACTIVE — {vcount} VERSION(S) STORED" if vcount else "WAITING"}`
+- Behaviour: Snapshots data BEFORE every approved refresh
+- Merge strategy: New data appended, no rows ever deleted
+- Excel: One OS + DB + Changes sheet per version
+- Latest: {latest["label"] if latest else "None yet"}
+- Max versions in session: 10""")
 
     # Changes log
     if st.session_state.changes_log:
@@ -549,7 +669,8 @@ with dl_col:
     excel_bytes = export_to_excel(
         st.session_state.os_df,
         st.session_state.db_df,
-        generated_at=ts_str
+        generated_at=ts_str,
+        version_history=version_agent.get_history()
     )
     fname = f"INFY_Version_Tracker_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
 
