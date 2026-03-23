@@ -11,31 +11,55 @@ Agents:
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-import sys, os, importlib
+import sys, os, importlib.util, types
 
-# ── Fix import path for Streamlit Cloud (Python 3.14) ────────────────────────
-# Streamlit Cloud runs app.py from /mount/src/infy_tracker/
-# We need the directory containing app.py on sys.path so that
-# the agents/ and utils/ sub-packages resolve correctly.
-_APP_DIR = os.path.abspath(os.path.dirname(__file__))
-if _APP_DIR not in sys.path:
-    sys.path.insert(0, _APP_DIR)
-# Also add parent in case app is nested one level deeper on some deployments
-_PARENT_DIR = os.path.abspath(os.path.join(_APP_DIR, ".."))
-if _PARENT_DIR not in sys.path:
-    sys.path.insert(0, _PARENT_DIR)
+# ── Python 3.14 / Streamlit Cloud compatible imports ─────────────────────────
+# Standard package imports break on Python 3.14 hot-reloads due to a stricter
+# sys.modules KeyError. We load every local module directly from its file path
+# using importlib.util.spec_from_file_location — this is independent of
+# sys.path and never touches sys.modules for parent packages.
 
-# Force-reload agents package to avoid stale module cache on hot-reloads
-for _mod in list(sys.modules.keys()):
-    if _mod.startswith("agents") or _mod.startswith("utils"):
-        del sys.modules[_mod]
+_HERE = os.path.abspath(os.path.dirname(__file__))
 
-from agents.agent_os         import OSDataAgent, OS_COLUMNS, DB_COLUMNS
-from agents.agent_db         import RecommendationAgent
-from agents.agent_refresh    import RefreshAgent
-from agents.agent_versioning import VersionGuardianAgent
-from agents.agent_analysis   import PolicyAnalysisAgent, render_agent5_tab
-from utils.excel_export      import export_to_excel
+def _load(module_name: str, rel_path: str):
+    """Load a module from a path relative to app.py, cache in sys.modules."""
+    abs_path = os.path.join(_HERE, rel_path)
+    # If already loaded and file hasn't changed, reuse
+    if module_name in sys.modules:
+        return sys.modules[module_name]
+    spec   = importlib.util.spec_from_file_location(module_name, abs_path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module
+
+# Ensure parent packages exist as empty namespace packages so sub-modules
+# can import each other with relative-style names if needed
+for _pkg in ("agents", "utils"):
+    if _pkg not in sys.modules:
+        _ns = types.ModuleType(_pkg)
+        _ns.__path__ = [os.path.join(_HERE, _pkg)]
+        _ns.__package__ = _pkg
+        sys.modules[_pkg] = _ns
+
+# Load each agent module explicitly
+_m_os       = _load("agents.agent_os",        "agents/agent_os.py")
+_m_db       = _load("agents.agent_db",        "agents/agent_db.py")
+_m_refresh  = _load("agents.agent_refresh",   "agents/agent_refresh.py")
+_m_version  = _load("agents.agent_versioning","agents/agent_versioning.py")
+_m_analysis = _load("agents.agent_analysis",  "agents/agent_analysis.py")
+_m_export   = _load("utils.excel_export",     "utils/excel_export.py")
+
+# Bind names used throughout app.py
+OSDataAgent          = _m_os.OSDataAgent
+OS_COLUMNS           = _m_os.OS_COLUMNS
+DB_COLUMNS           = _m_os.DB_COLUMNS
+RecommendationAgent  = _m_db.RecommendationAgent
+RefreshAgent         = _m_refresh.RefreshAgent
+VersionGuardianAgent = _m_version.VersionGuardianAgent
+PolicyAnalysisAgent  = _m_analysis.PolicyAnalysisAgent
+render_agent5_tab    = _m_analysis.render_agent5_tab
+export_to_excel      = _m_export.export_to_excel
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
