@@ -231,7 +231,7 @@ class VersionGuardianAgent:
             st.caption(f"OS Versions — {selected['os_count']} rows")
             st.dataframe(
                 selected["os_df"],
-                use_container_width=True,
+                width="stretch",
                 height=340,
                 hide_index=True,
                 column_config={
@@ -244,7 +244,7 @@ class VersionGuardianAgent:
             st.caption(f"DB Versions — {selected['db_count']} rows")
             st.dataframe(
                 selected["db_df"],
-                use_container_width=True,
+                width="stretch",
                 height=340,
                 hide_index=True,
                 column_config={

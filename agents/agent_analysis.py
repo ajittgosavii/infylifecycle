@@ -531,7 +531,7 @@ def render_agent5_tab(agent5: PolicyAnalysisAgent, key_ok: bool):
 
             submitted = st.form_submit_button(
                 "✅ Submit Policy Answers → Generate Guiding Principles",
-                type="primary", use_container_width=True,
+                type="primary", width="stretch",
                 disabled=not key_ok
             )
 
@@ -613,13 +613,13 @@ def render_agent5_tab(agent5: PolicyAnalysisAgent, key_ok: bool):
                 f"{len(st.session_state.a5_principles)} guiding principles and live cost data."
             )
             if st.button("▶ Run Agent 5 — Full Policy Analysis",
-                         type="primary", use_container_width=True):
+                         type="primary", width="stretch"):
                 st.session_state.a5_status = "analysing"
                 st.rerun()
 
         col_reset, _ = st.columns([1, 3])
         with col_reset:
-            if st.button("🔄 Restart Interview", use_container_width=True):
+            if st.button("🔄 Restart Interview", width="stretch"):
                 PolicyAnalysisAgent.reset()
                 st.rerun()
 
@@ -668,7 +668,7 @@ def render_agent5_tab(agent5: PolicyAnalysisAgent, key_ok: bool):
 
         col_reset, _ = st.columns([1, 3])
         with col_reset:
-            if st.button("🔄 Re-run Interview with New Policy", use_container_width=True):
+            if st.button("🔄 Re-run Interview with New Policy", width="stretch"):
                 PolicyAnalysisAgent.reset()
                 st.rerun()
 
@@ -739,10 +739,10 @@ def _render_analysis_results():
             st.dataframe(
                 os_df[["OS Version","Mainstream/Full Support End",
                         "Extended/LTSC Support End","Verdict",
-                        "Policy Recommendation","Recommendation"]].style.applymap(
+                        "Policy Recommendation","Recommendation"]].style.map(
                     verdict_color, subset=["Verdict"]
                 ),
-                use_container_width=True, height=480, hide_index=True,
+                width="stretch", height=480, hide_index=True,
                 column_config={
                     "OS Version":               st.column_config.TextColumn("OS Version",       width=200),
                     "Mainstream/Full Support End": st.column_config.TextColumn("Mainstream End",width=130),
@@ -767,10 +767,10 @@ def _render_analysis_results():
             st.dataframe(
                 db_df[["Database","Version","Status",
                         "Mainstream / Premier End","Extended Support End",
-                        "Verdict","Policy Recommendation","Recommendation"]].style.applymap(
+                        "Verdict","Policy Recommendation","Recommendation"]].style.map(
                     verdict_color, subset=["Verdict"]
                 ),
-                use_container_width=True, height=480, hide_index=True,
+                width="stretch", height=480, hide_index=True,
                 column_config={
                     "Database":                 st.column_config.TextColumn("Database",         width=120),
                     "Version":                  st.column_config.TextColumn("Version",          width=90),

@@ -11,16 +11,31 @@ Agents:
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-import sys, os
+import sys, os, importlib
 
-sys.path.insert(0, os.path.dirname(__file__))
+# ── Fix import path for Streamlit Cloud (Python 3.14) ────────────────────────
+# Streamlit Cloud runs app.py from /mount/src/infy_tracker/
+# We need the directory containing app.py on sys.path so that
+# the agents/ and utils/ sub-packages resolve correctly.
+_APP_DIR = os.path.abspath(os.path.dirname(__file__))
+if _APP_DIR not in sys.path:
+    sys.path.insert(0, _APP_DIR)
+# Also add parent in case app is nested one level deeper on some deployments
+_PARENT_DIR = os.path.abspath(os.path.join(_APP_DIR, ".."))
+if _PARENT_DIR not in sys.path:
+    sys.path.insert(0, _PARENT_DIR)
 
-from agents.agent_os        import OSDataAgent, OS_COLUMNS, DB_COLUMNS
-from agents.agent_db        import RecommendationAgent
-from agents.agent_refresh   import RefreshAgent
+# Force-reload agents package to avoid stale module cache on hot-reloads
+for _mod in list(sys.modules.keys()):
+    if _mod.startswith("agents") or _mod.startswith("utils"):
+        del sys.modules[_mod]
+
+from agents.agent_os         import OSDataAgent, OS_COLUMNS, DB_COLUMNS
+from agents.agent_db         import RecommendationAgent
+from agents.agent_refresh    import RefreshAgent
 from agents.agent_versioning import VersionGuardianAgent
-from agents.agent_analysis  import PolicyAnalysisAgent, render_agent5_tab
-from utils.excel_export     import export_to_excel
+from agents.agent_analysis   import PolicyAnalysisAgent, render_agent5_tab
+from utils.excel_export      import export_to_excel
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -136,7 +151,7 @@ with st.sidebar:
     Fetches ALL <b>OS &amp; DB</b> &amp; DB lifecycle data from the internet — no hardcoded baseline</small>
     </div>""", unsafe_allow_html=True)
 
-    run_a1 = st.button("▶ Run Agent 1 — Fetch All Data", use_container_width=True,
+    run_a1 = st.button("▶ Run Agent 1 — Fetch All Data", width="stretch",
                         disabled=not key_ok,
                         help="Searches 26 OS families + 34 DB products (60 total) via Claude AI web search")
 
@@ -154,7 +169,7 @@ with st.sidebar:
     os_empty = st.session_state.os_df.empty
     db_empty = st.session_state.db_df.empty
     run_a2 = st.button("▶ Run Agent 2 — Generate Recommendations",
-                        use_container_width=True,
+                        width="stretch",
                         disabled=not key_ok or (os_empty and db_empty),
                         help="Requires Agent 1 to have run first")
 
@@ -467,7 +482,7 @@ with tab_os:
         st.caption(f"Showing {len(view)} of {len(os_df)} OS entries")
 
         st.dataframe(
-            view, use_container_width=True, height=520, hide_index=True,
+            view, width="stretch", height=520, hide_index=True,
             column_config={
                 "OS Version":                    st.column_config.TextColumn("OS Version",        width=220),
                 "Availability Date":             st.column_config.TextColumn("Available",         width=110),
@@ -571,8 +586,8 @@ with tab_db:
         st.caption(f"Showing {len(view_db)} of {len(db_df)} DB entries")
 
         st.dataframe(
-            view_db.style.applymap(_style_status, subset=["Status"]) if "Status" in view_db.columns else view_db,
-            use_container_width=True, height=520, hide_index=True,
+            view_db.style.map(_style_status, subset=["Status"]) if "Status" in view_db.columns else view_db,
+            width="stretch", height=520, hide_index=True,
             column_config={
                 "Database":               st.column_config.TextColumn("Database",        width=130),
                 "Version":                st.column_config.TextColumn("Version",         width=100),
@@ -717,7 +732,7 @@ with dl_col:
         data=excel_bytes,
         file_name=fname,
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True,
+        width="stretch",
         type="primary",
         help="Downloads OS Versions + DB Versions + Summary in one formatted Excel workbook"
     )
