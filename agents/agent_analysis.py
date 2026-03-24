@@ -20,37 +20,47 @@ CONVERSATION_SYSTEM = f"""You are Agent 5 — a senior IT migration strategist a
 Help an enterprise architect define their OS and database migration policy
 for a project running from 1 April 2026 to 30 June 2028.
 
-Have a NATURAL CONVERSATION. Ask ONE focused question at a time.
-Build on previous answers — reference what the user told you earlier.
+YOUR APPROACH — BE ADAPTIVE:
+- Some users will answer all questions in detail. Others will give a brief context statement
+  and want to proceed quickly. BOTH are valid. Adapt to the user's pace.
+- If the user gives a rich context upfront (e.g. "We are a large bank with PCI DSS scope,
+  zero EOL tolerance, Azure preferred, small migration team"), extract as much as you can
+  from that single message and ask only about the gaps.
+- If the user says "just proceed" or "that's enough" or "go ahead" — respect that and signal ready.
+- For any topics NOT discussed, apply sensible enterprise defaults in the context JSON.
 
-MANDATORY TOPICS — you MUST get a clear answer on ALL of these before signalling ready:
-1.  eol_tolerance  — Risk tolerance for EOL software (zero / compensating controls / ESU / CVE-based)
-2.  min_runway     — Minimum support runway needed at project end Jun 2028
-3.  esu_budget     — Is ESU / extended support budget approved? For which tiers?
-4.  compliance     — Regulatory scope: PCI DSS / HIPAA / SOX / GDPR / internal only
-5.  windows_path   — What to do when Windows Client/Server reaches EOL
-6.  linux_path     — What to do when Linux/Unix/AIX/Solaris reaches EOL
-7.  db_eol_path    — Preferred path when a database reaches EOL (upgrade / OSS / cloud)
-8.  oracle_stance  — Oracle licensing: reducing spend, strategic, evaluate case-by-case
-9.  cloud_provider — Preferred cloud provider if migrating: Azure / AWS / GCP / on-prem
-10. legacy_db      — Stance on legacy DBs (IBM Informix, SAP ASE, Progress OpenEdge, Ingres)
-11. capacity       — Migration team size / how many systems can be migrated in the window
-12. criticality    — How are systems prioritised: compliance-first, revenue-first, EOL-first
-13. rollback       — Rollback/fallback policy during migrations
+TOPICS TO COVER (ask only what you still need):
+1.  eol_tolerance  — Risk tolerance for EOL software (default if not asked: "Low — ESU with controls")
+2.  min_runway     — Support runway at Jun 2028 (default: "12 months past project end")
+3.  esu_budget     — ESU budget (default: "Limited — Tier-1 only")
+4.  compliance     — Regulatory scope (default: "Internal policy only")
+5.  windows_path   — Windows EOL path (default: "In-place upgrade to latest supported version")
+6.  linux_path     — Linux/Unix/AIX path (default: "In-place upgrade same distro")
+7.  db_eol_path    — Database EOL path (default: "In-place upgrade same vendor")
+8.  oracle_stance  — Oracle licensing (default: "Evaluate case by case")
+9.  cloud_provider — Cloud provider (default: "No strong preference")
+10. legacy_db      — Legacy DBs stance (default: "Retain if stable, migrate if EOL in window")
+11. capacity       — Migration capacity (default: "Medium — 20-30 systems in project window")
+12. criticality    — System priority (default: "EOL-risk first, then compliance scope")
+13. rollback       — Rollback policy (default: "Parallel run for Tier-1, in-place for others")
 
-RULES:
-- Ask ONE question at a time, building naturally on previous answers
-- If the user's answer is about a specific product (e.g. Windows Server 2016), acknowledge it
-  AND continue asking about the remaining mandatory topics
-- Do NOT signal ready after just 1-2 exchanges — you need answers to ALL 13 topics above
-- Only signal ready when you have EXPLICIT answers to at least 10 of the 13 mandatory topics
-- When ready, respond with ONLY this JSON (nothing else before or after):
-  {{"ready": true, "summary": "2-3 sentence org-specific policy summary", "context": {{
+SIGNAL READY when:
+- You have explicit or inferred answers for most topics, OR
+- The user has indicated they want to proceed, OR
+- You have had at least 4 exchanges and covered the most critical topics
+  (eol_tolerance, compliance, windows_path, db_eol_path)
+
+When ready, respond with ONLY this JSON:
+{{"ready": true,
+  "summary": "2-3 sentence org-specific policy summary based on what was discussed",
+  "context": {{
     "eol_tolerance": "...", "min_runway": "...", "esu_budget": "...",
     "compliance": "...", "windows_path": "...", "linux_path": "...",
     "db_eol_path": "...", "oracle_stance": "...", "cloud_provider": "...",
     "legacy_db": "...", "capacity": "...", "criticality": "...", "rollback": "..."
-  }}}}
+  }},
+  "inferred_topics": ["list of topics that used defaults, not explicitly discussed"]
+}}
 Today: {TODAY}. Project ends 30 Jun 2028."""
 
 PRINCIPLES_SYSTEM = """You are a senior IT migration strategist.
@@ -218,32 +228,48 @@ class PolicyAnalysisAgent:
 
     def is_conversation_complete(self, reply: str, message_count: int = 0) -> tuple:
         """
-        Only accept ready signal if:
-        1. At least 16 messages exchanged (8 user + 8 agent turns)
-        2. JSON context has at least 8 of the 13 mandatory keys populated
-        3. reply contains valid JSON with ready:true
+        Accept ready signal adaptively:
+        - Minimum 4 exchanges (8 messages) OR user explicitly said to proceed
+        - Agent fills defaults for any uncovered topics — nothing is blocked
+        Returns (done, context, summary, inferred_topics)
         """
-        REQUIRED_KEYS = ["eol_tolerance","min_runway","esu_budget","compliance",
-                         "windows_path","linux_path","db_eol_path","oracle_stance",
-                         "cloud_provider","legacy_db","capacity","criticality","rollback"]
         try:
             s, e = reply.find("{"), reply.rfind("}")
             if s != -1 and e > s:
                 data = json.loads(reply[s:e+1])
                 if data.get("ready"):
-                    # Guard 1: minimum conversation length
-                    if message_count < 16:
-                        return False, {}, ""
-                    # Guard 2: context must have at least 8 keys populated
-                    context = data.get("context", {})
-                    populated = sum(1 for k in REQUIRED_KEYS
-                                    if context.get(k, "").strip() not in ("", "unknown", "not discussed"))
-                    if populated < 8:
-                        return False, {}, ""
-                    return True, context, data.get("summary", "")
+                    context         = data.get("context", {})
+                    inferred        = data.get("inferred_topics", [])
+                    summary         = data.get("summary", "")
+                    # Only guard: need at least 4 exchanges (8 messages)
+                    # so the agent has had a chance to ask something
+                    if message_count < 8:
+                        return False, {}, "", []
+                    # Fill any completely missing keys with defaults
+                    DEFAULTS = {
+                        "eol_tolerance":  "Low — ESU with compensating controls",
+                        "min_runway":     "12 months past Jun 2028",
+                        "esu_budget":     "Limited — Tier-1 critical systems only",
+                        "compliance":     "Internal policy only",
+                        "windows_path":   "In-place upgrade to latest supported version",
+                        "linux_path":     "In-place upgrade same distro",
+                        "db_eol_path":    "In-place upgrade same vendor",
+                        "oracle_stance":  "Evaluate Oracle vs alternatives case by case",
+                        "cloud_provider": "No strong cloud preference",
+                        "legacy_db":      "Retain if stable, migrate if EOL within project",
+                        "capacity":       "Medium — 20-30 systems across project lifespan",
+                        "criticality":    "EOL-risk first, then compliance scope",
+                        "rollback":       "Parallel run for Tier-1, in-place for others",
+                    }
+                    for k, default in DEFAULTS.items():
+                        if not context.get(k, "").strip():
+                            context[k] = f"[Default] {default}"
+                            if k not in inferred:
+                                inferred.append(k)
+                    return True, context, summary, inferred
         except Exception:
             pass
-        return False, {}, ""
+        return False, {}, "", []
 
     def generate_principles(self, context: dict, session_id: str) -> list:
         messages = _load_messages(session_id)
