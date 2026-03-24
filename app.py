@@ -904,16 +904,23 @@ with tab_a5:
                             all_msgs = _load_messages(session_id)
                             reply    = agent5.chat(all_msgs)
 
-                        # Pass message count — completion requires ≥16 messages + 8 context keys
-                        done, context, summary = agent5.is_conversation_complete(
+                        # Adaptive completion — accepts 4+ exchanges, fills defaults for gaps
+                        done, context, summary, inferred = agent5.is_conversation_complete(
                             reply, message_count=len(all_msgs) + 1)
 
                         if done:
+                            inferred_note = ""
+                            if inferred:
+                                inferred_note = (
+                                    f"\n\n💡 **Topics using defaults** (not explicitly discussed): "
+                                    f"{', '.join(inferred)}. "
+                                    f"These can be refined by continuing the conversation."
+                                )
                             complete_msg = (
-                                f"✅ **I now have sufficient policy context across all key areas.**\n\n"
-                                f"**Policy Summary:** {summary}\n\n"
-                                f"Moving to Phase 2 — generating your organisation-specific "
-                                f"Guiding Principles..."
+                                f"✅ **I have enough policy context to proceed.**\n\n"
+                                f"**Policy Summary:** {summary}"
+                                f"{inferred_note}\n\n"
+                                f"Moving to Phase 2 — generating Guiding Principles..."
                             )
                             st.markdown(complete_msg)
                             _save_message(session_id, "assistant", complete_msg)
@@ -926,64 +933,53 @@ with tab_a5:
                             _save_session_context(session_id, {}, "", "chatting")
                     st.rerun()
 
-            # ── Topic coverage indicator + controls ───────────────────────────
+            # ── Topic coverage + controls ─────────────────────────────────────
             if messages:
-                # Show which mandatory topics have been covered
-                TOPIC_KEYS = {
-                    "eol_tolerance": "EOL risk tolerance",
-                    "min_runway":    "Support runway",
-                    "esu_budget":    "ESU budget",
-                    "compliance":    "Compliance scope",
-                    "windows_path":  "Windows EOL path",
-                    "linux_path":    "Linux/Unix path",
-                    "db_eol_path":   "Database EOL path",
-                    "oracle_stance": "Oracle licensing",
-                    "cloud_provider":"Cloud provider",
-                    "legacy_db":     "Legacy databases",
-                    "capacity":      "Migration capacity",
-                    "criticality":   "System priority",
-                    "rollback":      "Rollback policy",
+                TOPIC_LABELS = {
+                    "eol_tolerance": "EOL risk tolerance",  "min_runway": "Support runway",
+                    "esu_budget": "ESU budget",             "compliance": "Compliance scope",
+                    "windows_path": "Windows path",         "linux_path": "Linux/Unix path",
+                    "db_eol_path": "DB EOL path",           "oracle_stance": "Oracle stance",
+                    "cloud_provider": "Cloud provider",     "legacy_db": "Legacy DBs",
+                    "capacity": "Migration capacity",        "criticality": "System priority",
+                    "rollback": "Rollback policy",
                 }
-                saved_context = st.session_state.get("a5_context", {})
-                covered = [k for k, label in TOPIC_KEYS.items()
-                           if saved_context.get(k,"").strip() not in ("","unknown","not discussed")]
-                needed  = len(TOPIC_KEYS) - len(covered)
+                saved_ctx = st.session_state.get("a5_context", {})
+                explicit  = [k for k, l in TOPIC_LABELS.items()
+                             if saved_ctx.get(k,"").strip() and not saved_ctx.get(k,"").startswith("[Default]")]
                 msg_count = len(messages)
+                pct       = int(len(explicit) / len(TOPIC_LABELS) * 100)
 
-                if msg_count < 16 or needed > 5:
-                    st.markdown(
-                        f"<div style='background:#FFF7ED;border:1px solid #FED7AA;"
-                        f"border-radius:8px;padding:0.6rem 0.9rem;font-size:0.8rem;margin-top:0.5rem;'>"
-                        f"📋 <strong>Policy coverage:</strong> "
-                        f"{len(covered)}/{len(TOPIC_KEYS)} topics covered · "
-                        f"{msg_count} messages exchanged<br>"
-                        f"<span style='color:#92400E;'>Agent 5 needs answers on: "
-                        f"{', '.join(TOPIC_KEYS[k] for k in TOPIC_KEYS if k not in covered)[:120]}...</span>"
-                        f"</div>", unsafe_allow_html=True)
+                if msg_count >= 8:
+                    colour = "#F0FDF4"; border = "#BBF7D0"; text_c = "#166534"
+                    note   = f"✅ {len(explicit)}/{len(TOPIC_LABELS)} topics explicitly covered"
                 else:
-                    st.markdown(
-                        f"<div style='background:#F0FDF4;border:1px solid #BBF7D0;"
-                        f"border-radius:8px;padding:0.6rem 0.9rem;font-size:0.8rem;margin-top:0.5rem;'>"
-                        f"✅ <strong>Policy coverage:</strong> "
-                        f"{len(covered)}/{len(TOPIC_KEYS)} topics covered · "
-                        f"{msg_count} messages — ready to proceed"
-                        f"</div>", unsafe_allow_html=True)
+                    colour = "#FFF7ED"; border = "#FED7AA"; text_c = "#92400E"
+                    note   = f"💬 {len(explicit)}/{len(TOPIC_LABELS)} topics covered · keep chatting or proceed when ready"
+
+                st.markdown(
+                    f"<div style='background:{colour};border:1px solid {border};"
+                    f"border-radius:8px;padding:0.5rem 0.9rem;font-size:0.8rem;color:{text_c};'>"
+                    f"{note} · {msg_count} messages<br>"
+                    f"<span style='color:#6B7280;font-size:0.75rem;'>"
+                    f"Missing topics will use enterprise defaults — you can refine anytime</span>"
+                    f"</div>", unsafe_allow_html=True)
 
                 st.divider()
                 col_proceed, col_reset = st.columns([2, 1])
                 with col_proceed:
-                    # Manual proceed requires at least 20 messages (10 exchanges)
-                    if len(messages) >= 20:
+                    # Allow manual proceed after just 4 exchanges (8 messages)
+                    if len(messages) >= 8:
                         if st.button("➡️ Proceed to Guiding Principles",
                                      type="primary", width="stretch"):
                             agent5     = PolicyAnalysisAgent(api_key=api_key)
                             all_msgs   = _load_messages(session_id)
                             ctx_prompt = (
-                                "Extract policy context as JSON with exactly these keys: "
+                                "Extract all policy context discussed so far as JSON with these keys: "
                                 "eol_tolerance, min_runway, esu_budget, compliance, "
                                 "windows_path, linux_path, db_eol_path, oracle_stance, "
                                 "cloud_provider, legacy_db, capacity, criticality, rollback. "
-                                "Use 'not discussed' for any topic not covered. "
+                                "For any topic NOT discussed, use '[Default] <sensible enterprise default>'. "
                                 "Return ONLY the JSON object."
                             )
                             try:
@@ -1001,9 +997,8 @@ with tab_a5:
                             st.session_state.a5_status  = "principles"
                             st.rerun()
                     else:
-                        remaining = max(0, 20 - len(messages))
-                        st.info(f"💬 Continue the conversation — "
-                                f"~{remaining} more exchanges recommended before proceeding")
+                        remaining = max(0, 8 - len(messages))
+                        st.caption(f"💬 {remaining} more message(s) before you can proceed manually")
                 with col_reset:
                     if st.button("🔄 New Conversation", width="stretch"):
                         PolicyAnalysisAgent.reset()
@@ -1045,9 +1040,13 @@ with tab_a5:
 
             # Show policy summary from chat
             if context:
-                with st.expander("📋 Policy Context extracted from conversation", expanded=False):
+                with st.expander("📋 Policy Context from conversation", expanded=False):
                     for k, v in context.items():
-                        st.markdown(f"**{k.replace('_',' ').title()}:** {v}")
+                        is_default = str(v).startswith("[Default]")
+                        icon = "⚙️" if is_default else "✅"
+                        label = k.replace("_"," ").title()
+                        st.markdown(f"{icon} **{label}:** {v}"
+                                    + (" *(enterprise default — not discussed)*" if is_default else ""))
 
             with st.expander(f"⚖️ {len(principles)} Guiding Principles generated", expanded=True):
                 c1, c2 = st.columns(2)
