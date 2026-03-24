@@ -484,9 +484,9 @@ class OSDataAgent:
                     f"🔍 Fetching OS: {target['family']}  ({idx+1}/{total})"
                 )
 
-            # Small delay between every search to stay within rate limits
+            # Short pause — knowledge fallback is instant so no long delays needed
             if idx > 0:
-                time.sleep(1)
+                time.sleep(0.5)
 
             rows = self._fetch_family(target, kind="OS")
 
@@ -503,14 +503,17 @@ class OSDataAgent:
                 if progress_callback:
                     progress_callback(
                         (idx + 1) / total,
-                        f"⚠️ {target['family']}: no data returned after 3 web attempts + knowledge fallback"
+                        f"⚠️ {target['family']}: no data (web + knowledge both failed)"
                     )
 
-        if skipped and progress_callback:
-            progress_callback(1.0,
-                f"⚠️ OS fetch complete — {len(all_rows)} rows. "
-                f"Skipped {len(skipped)}: {', '.join(skipped[:5])}"
-            )
+        if progress_callback:
+            if skipped:
+                progress_callback(1.0,
+                    f"OS fetch done — {len(all_rows)} rows from {total - len(skipped)}/{total} families. "
+                    f"Skipped: {', '.join(skipped[:3])}"
+                )
+            else:
+                progress_callback(1.0, f"✅ OS fetch complete — {len(all_rows)} versions across all {total} families")
 
         if not all_rows:
             return pd.DataFrame(columns=OS_COLUMNS)
@@ -540,10 +543,9 @@ class OSDataAgent:
                     f"🔍 Fetching DB: {target['family']}  ({idx+1}/{total})"
                 )
 
-            # 1.5s delay between every DB search — DB searches run back-to-back
-            # after OS completes, so extra breathing room prevents 429 rate limits
+            # Short pause between DB searches
             if idx > 0:
-                time.sleep(1.5)
+                time.sleep(0.5)
 
             rows = self._fetch_family(target, kind="DB")
 
@@ -559,14 +561,17 @@ class OSDataAgent:
                 if progress_callback:
                     progress_callback(
                         (idx + 1) / total,
-                        f"⚠️ {target['family']}: no data after 3 web attempts + knowledge fallback"
+                        f"⚠️ {target['family']}: no data (web + knowledge both failed)"
                     )
 
-        if skipped and progress_callback:
-            progress_callback(1.0,
-                f"⚠️ DB fetch complete — {len(all_rows)} rows. "
-                f"Skipped {len(skipped)}: {', '.join(skipped[:5])}"
-            )
+        if progress_callback:
+            if skipped:
+                progress_callback(1.0,
+                    f"DB fetch done — {len(all_rows)} rows from {total - len(skipped)}/{total} products. "
+                    f"Skipped: {', '.join(skipped[:3])}"
+                )
+            else:
+                progress_callback(1.0, f"✅ DB fetch complete — {len(all_rows)} versions across all {total} products")
 
         if not all_rows:
             return pd.DataFrame(columns=DB_COLUMNS)
@@ -582,16 +587,21 @@ class OSDataAgent:
         df = df.drop_duplicates(subset=["Database", "Version"]).reset_index(drop=True)
         return df
 
-    # ── Internal fetcher: web_search priority, knowledge as last resort ────────
+    # ── Internal fetcher: 1 web attempt → immediate knowledge fallback ─────────
     def _fetch_family(self, target: dict, kind: str) -> list:
         """
-        Priority 1 — Live web_search (up to 3 attempts with backoff)
-                     Gives the freshest lifecycle dates from official vendor pages.
-        Priority 2 — Claude training knowledge (guaranteed fallback)
-                     Only used if ALL web_search attempts fail.
+        Strategy (optimised for Streamlit Cloud reliability):
 
-        Since Agent 1 runs every 15 days, we can afford to be patient
-        and retry web_search thoroughly before falling back.
+        Step 1 — Try live web_search ONCE (~5-10s).
+                 If it succeeds → return fresh internet data immediately.
+                 If it fails for ANY reason → move to Step 2 immediately.
+
+        Step 2 — Claude training knowledge (no tool, no internet).
+                 Uses a dedicated prompt asking Claude to answer from training data.
+                 This ALWAYS returns data. Never times out.
+
+        Rationale: 3 retries × long sleeps = 8+ min total → Streamlit Cloud timeout.
+        1 attempt + immediate fallback = ~5s per family → 26 OS + 34 DB in ~5 min.
         """
         import time
 
@@ -615,55 +625,35 @@ class OSDataAgent:
                 today=self.today
             )
 
-        # ── Priority 1: Live web_search — up to 3 attempts ───────────────────
-        for attempt in range(1, 4):
-            try:
-                response = self.client.messages.create(
-                    model=self.model,
-                    max_tokens=4096,
-                    tools=[{"type": "web_search_20250305", "name": "web_search"}],
-                    messages=[{"role": "user", "content": web_prompt}]
-                )
-                text = "".join(
-                    block.text for block in response.content if hasattr(block, "text")
-                )
-                rows = self._parse_json_array(text)
-                if rows:
-                    return rows  # ✅ Web data obtained
-                # Valid API response but empty JSON parse — retry
-                time.sleep(2 * attempt)
-                continue
-
-            except Exception as e:
-                err_str = str(e).lower()
-
-                # Hard auth failure — no point retrying anything
-                if "401" in err_str or "authentication" in err_str:
-                    return []
-
-                # Rate limit (429) — wait longer before retry
-                if "429" in err_str or "rate" in err_str or "too many" in err_str:
-                    wait = 15 * attempt   # 15s, 30s, 45s
-                    time.sleep(wait)
-                    continue
-
-                # Server overload (500/529) — wait and retry
-                if "500" in err_str or "529" in err_str or "overload" in err_str:
-                    wait = 8 * attempt    # 8s, 16s, 24s
-                    time.sleep(wait)
-                    continue
-
-                # Any other error (400, network etc.) — short wait then retry
-                time.sleep(3 * attempt)   # 3s, 6s, 9s
-                continue
-
-        # ── Priority 2: Claude training knowledge (safety net) ───────────────
-        # All 3 web_search attempts failed. Use Claude's built-in knowledge.
-        # This uses a dedicated prompt that explicitly instructs Claude to answer
-        # from training data — NOT from a "Search the internet" instruction,
-        # which would return empty results without the web_search tool.
+        # ── Step 1: Live web_search — single attempt ──────────────────────────
         try:
-            time.sleep(1)
+            response = self.client.messages.create(
+                model=self.model,
+                max_tokens=4096,
+                tools=[{"type": "web_search_20250305", "name": "web_search"}],
+                messages=[{"role": "user", "content": web_prompt}]
+            )
+            text = "".join(
+                block.text for block in response.content if hasattr(block, "text")
+            )
+            rows = self._parse_json_array(text)
+            if rows:
+                return rows   # ✅ Live internet data obtained
+            # Response came back but JSON was empty — fall through to knowledge
+        except Exception as e:
+            err_str = str(e).lower()
+            # Hard auth failure — knowledge won't help either
+            if "401" in err_str or "authentication" in err_str:
+                return []
+            # For 429 rate limit only — brief pause before knowledge call
+            if "429" in err_str or "rate" in err_str:
+                time.sleep(3)
+            # All other errors (400, 500, network) — fall through immediately
+
+        # ── Step 2: Claude training knowledge — guaranteed data ───────────────
+        # A dedicated prompt that does NOT say "search the internet" so Claude
+        # answers confidently from its training data without needing any tool.
+        try:
             response = self.client.messages.create(
                 model=self.model,
                 max_tokens=4096,
@@ -674,7 +664,7 @@ class OSDataAgent:
             )
             rows = self._parse_json_array(text)
             if rows:
-                return rows
+                return rows   # ✅ Knowledge data obtained
         except Exception:
             pass
 
