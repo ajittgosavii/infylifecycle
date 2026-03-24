@@ -1,463 +1,223 @@
 """
-Agent 1: Dynamic OS & DB Data Fetcher
-Comprehensively searches the internet for ALL OS and DB lifecycle data.
-NO hardcoded baseline — every row is fetched live from the web.
+Agent 1: Internet Change Verifier
+==================================
+The baseline_data.py already contains ALL known OS and DB versions from
+Claude's training knowledge (149 OS + 172 DB = 321 rows).
+
+Agent 1's ONLY job is to go to the internet and check whether any
+lifecycle dates have changed since the baseline was last updated.
+It updates the Notes column with "[Web verified: date]" when it finds changes.
 """
 
 import anthropic
 import json
-import pandas as pd
 from datetime import datetime
 
-# ── OS search targets ────────────────────────────────────────────────────────
-OS_SEARCH_TARGETS = [
-    {
-        "family": "Windows 11 Client",
-        "query": "Windows 11 all versions lifecycle support end dates mainstream extended site:microsoft.com",
-        "hint": "Include ALL Windows 11 versions: 21H2, 22H2, 23H2, 24H2, 25H2, 26H1 and all editions"
-    },
-    {
-        "family": "Windows 10 Client",
-        "query": "Windows 10 all versions lifecycle support end dates mainstream extended LTSC microsoft",
-        "hint": "Include 1507,1511,1607,1703,1709,1803,1809,1903,1909,2004,20H2,21H1,21H2,22H2 and all LTSC editions"
-    },
-    {
-        "family": "Windows Server",
-        "query": "Windows Server 2008 2012 2016 2019 2022 2025 lifecycle support end dates microsoft",
-        "hint": "Include Windows Server 2003,2008,2008R2,2012,2012R2,2016,2019,2022,2025 all editions"
-    },
-    {
-        "family": "RHEL",
-        "query": "Red Hat Enterprise Linux RHEL all versions lifecycle support end dates redhat.com",
-        "hint": "Include RHEL 4,5,6,7,8,9,10 with Full Support, Maintenance, and Extended Life Phase dates"
-    },
-    {
-        "family": "Ubuntu",
-        "query": "Ubuntu LTS non-LTS all releases lifecycle end of support dates ubuntu.com",
-        "hint": "Include Ubuntu 14.04,16.04,18.04,20.04,22.04,24.04,24.10,25.04 LTS and interim releases"
-    },
-    {
-        "family": "SLES",
-        "query": "SUSE Linux Enterprise Server all versions service packs lifecycle support dates suse.com",
-        "hint": "Include SLES 11,12,15 with all service packs SP1-SP7 and LTSS extended support dates"
-    },
-    {
-        "family": "Debian",
-        "query": "Debian Linux all releases lifecycle end of life support LTS ELTS dates debian.org",
-        "hint": "Include Debian 8 Jessie through Debian 13 Trixie with security, LTS, and ELTS dates"
-    },
-    {
-        "family": "CentOS",
-        "query": "CentOS all versions end of life dates centos.org including CentOS Stream",
-        "hint": "Include CentOS 6,7,8 and CentOS Stream 8,9,10 with EOL dates"
-    },
-    {
-        "family": "Rocky and AlmaLinux",
-        "query": "Rocky Linux AlmaLinux all versions lifecycle end of life support dates 2026",
-        "hint": "Include Rocky Linux 8,9,10 and AlmaLinux 8,9,10 with detailed EOL dates"
-    },
-    {
-        "family": "Oracle Linux",
-        "query": "Oracle Linux all versions lifecycle premier extended support end dates oracle.com",
-        "hint": "Include Oracle Linux 6,7,8,9,10 with Premier and Extended support end dates"
-    },
-    {
-        "family": "openSUSE and Fedora",
-        "query": "openSUSE Leap all versions Fedora Linux all releases lifecycle end of life dates 2026",
-        "hint": "Include openSUSE Leap 15.x and Fedora 38,39,40,41,42 with EOL dates"
-    },
-    {
-        "family": "macOS",
-        "query": "macOS all versions lifecycle support end dates Apple 2026",
-        "hint": "Include macOS 10.14 Mojave through macOS 15 Sequoia and macOS 26 with support end dates"
-    },
-    {
-        "family": "Solaris",
-        "query": "Oracle Solaris 10 11 all versions lifecycle support end dates oracle.com",
-        "hint": "Include Solaris 10 and Solaris 11.1 through 11.4 SRU versions with support end dates"
-    },
-    {
-        "family": "AIX",
-        "query": "IBM AIX all versions technology levels lifecycle support end of service dates ibm.com",
-        "hint": "Include AIX 6.1, 7.1, 7.2, 7.3 with all TL (Technology Level) versions and support dates"
-    },
-    {
-        "family": "HP-UX",
-        "query": "HP-UX 11i all versions lifecycle support end dates hpe.com",
-        "hint": "Include HP-UX 11i v1, v2, v3 for both HP 9000 PA-RISC and Integrity Itanium servers"
-    },
-    {
-        "family": "FreeBSD",
-        "query": "FreeBSD all stable release branches lifecycle end of life dates freebsd.org",
-        "hint": "Include FreeBSD 11,12,13,14,15 release and stable branches with EoL dates"
-    },
-    {
-        "family": "OpenVMS and Tru64",
-        "query": "OpenVMS VSI VMS Software Tru64 UNIX all versions lifecycle support dates 2026",
-        "hint": "Include OpenVMS x86, IA-64, Alpha versions and Tru64 UNIX 5.x with support dates"
-    },
-    {
-        "family": "Android and iOS",
-        "query": "Android enterprise iOS iPadOS all versions security update support end dates 2026",
-        "hint": "Include Android 10-15 enterprise and iOS/iPadOS 15-18 with Apple/Google support end dates"
-    },
+
+# ── Search targets — focused on finding date changes ─────────────────────────
+OS_CHECK_TARGETS = [
+    ("Windows 11/10 Client",
+     "Windows 11 Windows 10 latest version lifecycle support end dates changed 2025 2026 microsoft.com"),
+    ("Windows Server",
+     "Windows Server 2016 2019 2022 2025 lifecycle support end dates microsoft.com"),
+    ("RHEL",
+     "Red Hat Enterprise Linux RHEL 7 8 9 10 end of life support dates changed 2026 redhat.com"),
+    ("Ubuntu",
+     "Ubuntu LTS 20.04 22.04 24.04 end of life support dates ubuntu.com 2026"),
+    ("SLES",
+     "SUSE Linux Enterprise Server SLES 12 15 all service packs lifecycle dates changed suse.com"),
+    ("Debian",
+     "Debian 10 11 12 13 end of life dates changed debian.org 2026"),
+    ("CentOS Stream Rocky AlmaLinux Oracle Linux",
+     "CentOS Stream 9 10 Rocky Linux AlmaLinux Oracle Linux lifecycle dates 2026"),
+    ("macOS",
+     "macOS Ventura Sonoma Sequoia support end dates Apple 2026"),
+    ("Solaris AIX",
+     "Oracle Solaris 11.4 IBM AIX 7.2 7.3 support end dates changed 2026"),
 ]
 
-# ── DB search targets ────────────────────────────────────────────────────────
-DB_SEARCH_TARGETS = [
-    {
-        "family": "SQL Server",
-        "query": "Microsoft SQL Server all versions lifecycle mainstream extended end of support dates microsoft.com",
-        "hint": "Include SQL Server 2008,2008R2,2012,2014,2016,2017,2019,2022,2025 with all support phase dates"
-    },
-    {
-        "family": "Oracle Database",
-        "query": "Oracle Database all versions premier extended lifecycle support end dates oracle.com 2026",
-        "hint": "Include Oracle DB 10g,11g R1/R2,12c R1/R2,18c,19c,21c,23ai with all support phase dates"
-    },
-    {
-        "family": "PostgreSQL",
-        "query": "PostgreSQL all versions end of life support dates postgresql.org 2026",
-        "hint": "Include PostgreSQL 9.6 through 18 with each version's EOL date"
-    },
-    {
-        "family": "MySQL",
-        "query": "MySQL all versions lifecycle premier extended support end dates oracle.com mysql.com",
-        "hint": "Include MySQL 5.6, 5.7, 8.0, 8.4 LTS, 9.x LTS with all support phase dates"
-    },
-    {
-        "family": "MariaDB",
-        "query": "MariaDB all versions lifecycle end of life support dates mariadb.org 2026",
-        "hint": "Include MariaDB 10.3 through 11.x including all LTS versions with EOL dates"
-    },
-    {
-        "family": "MongoDB",
-        "query": "MongoDB all versions lifecycle end of life support dates mongodb.com 2026",
-        "hint": "Include MongoDB 3.6,4.0,4.2,4.4,5.0,6.0,7.0,8.0 with EOL dates"
-    },
-    {
-        "family": "Redis",
-        "query": "Redis all versions lifecycle end of life support dates redis.io 2026",
-        "hint": "Include Redis 5.0,6.0,6.2,7.0,7.2,7.4,7.8,8.0 with EOL dates"
-    },
-    {
-        "family": "IBM Db2",
-        "query": "IBM Db2 all versions lifecycle end of support dates ibm.com 2026",
-        "hint": "Include IBM Db2 9.7,10.1,10.5,11.1,11.5 with all support end dates"
-    },
-    {
-        "family": "Cassandra",
-        "query": "Apache Cassandra all versions lifecycle end of life support dates cassandra.apache.org",
-        "hint": "Include Cassandra 3.0,3.11,4.0,4.1,5.0 with EOL dates"
-    },
-    {
-        "family": "Elasticsearch",
-        "query": "Elasticsearch Elastic Stack all versions end of life support dates elastic.co 2026",
-        "hint": "Include Elasticsearch 6.x,7.x,8.x versions with EOL dates"
-    },
-    {
-        "family": "SAP HANA",
-        "query": "SAP HANA database all versions lifecycle end of maintenance support dates sap.com",
-        "hint": "Include SAP HANA 1.0 SPS, 2.0 SPS revisions with Mainstream and Extended Maintenance dates"
-    },
-    {
-        "family": "Sybase SAP ASE",
-        "query": "SAP Sybase Adaptive Server Enterprise ASE all versions lifecycle end of support dates sap.com",
-        "hint": "Include Sybase ASE 15.0,15.5,15.7,16.0 versions with PAM support end dates"
-    },
-    {
-        "family": "Teradata",
-        "query": "Teradata Database Vantage all versions lifecycle end of support dates teradata.com",
-        "hint": "Include Teradata Database 14.x,15.x,16.x and Vantage versions with support dates"
-    },
-    {
-        "family": "Amazon Aurora",
-        "query": "Amazon Aurora MySQL PostgreSQL compatible all versions end of support lifecycle aws.amazon.com 2026",
-        "hint": "Include Aurora MySQL 2.x,3.x and Aurora PostgreSQL major version support end dates"
-    },
-    {
-        "family": "Amazon RDS",
-        "query": "Amazon RDS engine versions end of support deprecation dates aws.amazon.com 2026",
-        "hint": "Include RDS SQL Server, MySQL, PostgreSQL, MariaDB, Oracle engine version deprecation dates"
-    },
-    {
-        "family": "CouchDB and CouchBase",
-        "query": "Apache CouchDB Couchbase Server all versions lifecycle end of support dates 2026",
-        "hint": "Include CouchDB 2.x,3.x and Couchbase Server 6.x,7.x with EOL dates"
-    },
-    {
-        "family": "Neo4j",
-        "query": "Neo4j graph database all versions lifecycle end of life support dates neo4j.com 2026",
-        "hint": "Include Neo4j 3.5,4.x,5.x with all support end dates"
-    },
-    {
-        "family": "InfluxDB and TimescaleDB",
-        "query": "InfluxDB TimescaleDB all versions lifecycle end of support dates influxdata.com 2026",
-        "hint": "Include InfluxDB 1.x,2.x,3.x and TimescaleDB versions with support dates"
-    },
-    {
-        "family": "Snowflake and Databricks",
-        "query": "Snowflake Databricks Runtime versions lifecycle end of support dates 2026",
-        "hint": "Include Databricks Runtime LTS versions with support end dates and Snowflake versioning policy"
-    },
-    {
-        "family": "Azure SQL and Cosmos DB",
-        "query": "Azure SQL Database Cosmos DB versions end of support lifecycle microsoft.com 2026",
-        "hint": "Include Azure SQL Database and Cosmos DB API version deprecation and support end dates"
-    },
+DB_CHECK_TARGETS = [
+    ("SQL Server",
+     "SQL Server 2016 2017 2019 2022 mainstream extended support end dates changed microsoft.com"),
+    ("Oracle Database",
+     "Oracle Database 19c 23ai premier extended support dates changed oracle.com 2026"),
+    ("PostgreSQL MySQL MariaDB",
+     "PostgreSQL 14 15 16 17 MySQL 8.0 8.4 MariaDB 10.11 11.4 end of life dates changed 2026"),
+    ("IBM Db2 Informix SAP",
+     "IBM Db2 11.5 IBM Informix 14.10 SAP HANA 2.0 SAP ASE 16 support dates changed 2026"),
+    ("MongoDB Redis Cassandra",
+     "MongoDB 7.0 8.0 Redis 7.4 Apache Cassandra 4.1 5.0 end of life dates 2026"),
+    ("Amazon AWS databases",
+     "Amazon Aurora RDS MySQL PostgreSQL end of support dates changed aws.amazon.com 2026"),
+    ("Azure and Snowflake",
+     "Azure SQL Managed Instance Cosmos DB Databricks Runtime end of support dates 2026"),
 ]
-
-OS_COLUMNS = [
-    "OS Version", "Availability Date", "Security/Standard Support End",
-    "Mainstream/Full Support End", "Extended/LTSC Support End",
-    "Notes", "Recommendation", "Upgrade", "Replace",
-    "Primary Alternative", "Secondary Alternative"
-]
-
-DB_COLUMNS = [
-    "Database", "Version", "Type",
-    "Mainstream / Premier End", "Extended Support End",
-    "Status", "Notes", "Recommendation",
-    "Upgrade", "Replace", "Primary Alternative", "Secondary Alternative"
-]
-
-OS_FETCH_PROMPT = """You are a senior IT lifecycle analyst. Search the internet for comprehensive and current lifecycle data for the {family} operating system family.
-
-Hint: {hint}
-Search query: {query}
-
-Today's date: {today}
-
-After searching, return ONLY a valid JSON array (no markdown, no extra text) listing ALL versions you find.
-Be exhaustive — include every version and sub-version available.
-
-Each element must use EXACTLY these field names:
-[
-  {{
-    "OS Version": "full descriptive name e.g. Windows 11 24H2",
-    "Availability Date": "YYYY-MM-DD or empty string",
-    "Security/Standard Support End": "YYYY-MM-DD or empty string",
-    "Mainstream/Full Support End": "YYYY-MM-DD or text like 'Ended' or 'Active' or 'Rolling'",
-    "Extended/LTSC Support End": "YYYY-MM-DD or empty string",
-    "Notes": "codename, edition notes, or key lifecycle notes",
-    "Recommendation": "",
-    "Upgrade": "Y if upgrade strongly recommended, else N",
-    "Replace": "Y if migration to a different OS recommended, else N",
-    "Primary Alternative": "best upgrade or replacement target if applicable",
-    "Secondary Alternative": "secondary option or empty string"
-  }}
-]
-
-Output ONLY the JSON array starting with [ and ending with ]."""
-
-DB_FETCH_PROMPT = """You are a senior database architect. Search the internet for comprehensive and current lifecycle data for {family} database versions.
-
-Hint: {hint}
-Search query: {query}
-
-Today's date: {today}
-
-Classify Status as:
-- "End of Life" — all vendor support has ended as of today
-- "Expiring Soon" — support ends within the next 12 months from today
-- "Supported" — currently in active vendor support window
-- "Future" — not yet generally available
-
-After searching, return ONLY a valid JSON array (no markdown, no extra text) listing ALL versions found.
-
-Each element must use EXACTLY these field names:
-[
-  {{
-    "Database": "vendor/product name e.g. SQL Server",
-    "Version": "version string e.g. 2022, 8.4 LTS, 19c",
-    "Type": "Relational | Document (NoSQL) | In-Memory | Time-Series | Graph | Search | Columnar | Cloud-Managed | Multi-Model",
-    "Mainstream / Premier End": "YYYY-MM-DD or TBD or empty string",
-    "Extended Support End": "YYYY-MM-DD or TBD or empty string",
-    "Status": "Supported | End of Life | Expiring Soon | Future",
-    "Notes": "edition notes or key lifecycle notes",
-    "Recommendation": "",
-    "Upgrade": "Y if in-place upgrade strongly recommended, else N",
-    "Replace": "Y if migration to a different product recommended, else N",
-    "Primary Alternative": "recommended target version or product",
-    "Secondary Alternative": "secondary option or empty string"
-  }}
-]
-
-Output ONLY the JSON array starting with [ and ending with ]."""
 
 
 class OSDataAgent:
     def __init__(self, api_key: str):
         self.client = anthropic.Anthropic(api_key=api_key)
-        self.model  = "claude-haiku-4-5-20251001"
+        self.model  = "claude-sonnet-4-6"   # sonnet supports web_search tool
         self.today  = datetime.now().strftime("%d %B %Y")
 
-    # ── Fetch ALL OS data from web ────────────────────────────────────────────
-    def fetch_all_os_data(self, progress_callback=None) -> pd.DataFrame:
-        all_rows = []
-        total = len(OS_SEARCH_TARGETS)
+    def fetch_updates(self, progress_callback=None) -> dict:
+        """
+        Checks the internet for ANY changes to lifecycle dates.
+        Returns a dict of updates keyed by product/version name.
+        """
+        updates  = {}
+        all_targets = (
+            [("OS", f, q) for f, q in OS_CHECK_TARGETS] +
+            [("DB", f, q) for f, q in DB_CHECK_TARGETS]
+        )
+        total = len(all_targets)
 
-        for idx, target in enumerate(OS_SEARCH_TARGETS):
+        for idx, (kind, family, query) in enumerate(all_targets):
             if progress_callback:
                 progress_callback(
                     idx / total,
-                    f"🔍 Fetching OS data: {target['family']}  ({idx+1}/{total})"
+                    f"🔍 Checking for changes: {family}  ({idx+1}/{total})"
                 )
-            rows = self._fetch_family(target, kind="OS")
-            all_rows.extend(rows)
-            if progress_callback:
-                progress_callback(
-                    (idx + 1) / total,
-                    f"✅ {target['family']}: {len(rows)} versions  |  running total: {len(all_rows)}"
-                )
+            try:
+                result = self._check_changes(kind, family, query)
+                if result.get("changes"):
+                    updates[family] = result
+            except Exception as e:
+                updates[family] = {"error": str(e), "changes": []}
 
-        if not all_rows:
-            return pd.DataFrame(columns=OS_COLUMNS)
+        if progress_callback:
+            progress_callback(1.0, f"✅ Internet check complete — {len(updates)} families with updates found.")
 
-        df = pd.DataFrame(all_rows)
-        for col in OS_COLUMNS:
-            if col not in df.columns:
-                df[col] = ""
-        df = df[OS_COLUMNS]
-        df = df[~df["OS Version"].str.startswith("[Fetch error", na=False)]
-        df = df.drop_duplicates(subset=["OS Version"]).reset_index(drop=True)
-        return df
+        return updates
 
-    # ── Fetch ALL DB data from web ────────────────────────────────────────────
-    def fetch_all_db_data(self, progress_callback=None) -> pd.DataFrame:
-        all_rows = []
-        total = len(DB_SEARCH_TARGETS)
+    def _check_changes(self, kind: str, family: str, query: str) -> dict:
+        prompt = f"""Search the internet for the LATEST support lifecycle dates for {family}.
+Query: {query}
 
-        for idx, target in enumerate(DB_SEARCH_TARGETS):
-            if progress_callback:
-                progress_callback(
-                    idx / total,
-                    f"🔍 Fetching DB data: {target['family']}  ({idx+1}/{total})"
-                )
-            rows = self._fetch_family(target, kind="DB")
-            all_rows.extend(rows)
-            if progress_callback:
-                progress_callback(
-                    (idx + 1) / total,
-                    f"✅ {target['family']}: {len(rows)} versions  |  running total: {len(all_rows)}"
-                )
+Today's date: {self.today}
 
-        if not all_rows:
-            return pd.DataFrame(columns=DB_COLUMNS)
+Look specifically for any RECENT changes, corrections, or updates to support end dates.
+Return ONLY a JSON object (no markdown):
+{{
+  "family": "{family}",
+  "kind": "{kind}",
+  "changes": [
+    {{
+      "name": "exact product/version name e.g. SQL Server 2016",
+      "field": "which field changed e.g. Extended Support End",
+      "new_value": "the correct current value e.g. 2026-07-14",
+      "status": "Supported|End of Life|Expiring Soon|Future",
+      "notes": "source or context"
+    }}
+  ]
+}}
 
-        df = pd.DataFrame(all_rows)
-        for col in DB_COLUMNS:
-            if col not in df.columns:
-                df[col] = ""
-        df = df[DB_COLUMNS]
-        df = df.drop_duplicates(subset=["Database", "Version"]).reset_index(drop=True)
-        return df
+Only include entries where you found CONFIRMED current data from official sources.
+If nothing has changed from known dates, return an empty changes array."""
 
-    # ── Internal fetcher ──────────────────────────────────────────────────────
-    def _fetch_family(self, target: dict, kind: str) -> list:
-        if kind == "OS":
-            prompt = OS_FETCH_PROMPT.format(
-                family=target["family"],
-                hint=target["hint"],
-                query=target["query"],
-                today=self.today
-            )
-            fallback_cols = OS_COLUMNS
-        else:
-            prompt = DB_FETCH_PROMPT.format(
-                family=target["family"],
-                hint=target["hint"],
-                query=target["query"],
-                today=self.today
-            )
-            fallback_cols = DB_COLUMNS
-
-        try:
-            response = self.client.messages.create(
-                model=self.model,
-                max_tokens=4096,
-                tools=[{"type": "web_search_20250305", "name": "web_search"}],
-                messages=[{"role": "user", "content": prompt}]
-            )
-            text = "".join(
-                block.text for block in response.content if hasattr(block, "text")
-            )
-            return self._parse_json_array(text)
-
-        except Exception as e:
-            # Return a flagged error row so UI can show it
-            row = {col: "" for col in fallback_cols}
-            if kind == "OS":
-                row["OS Version"] = f"[Fetch error: {target['family']}]"
-                row["Notes"] = str(e)[:120]
-            else:
-                row["Database"] = target["family"]
-                row["Version"]  = "Error"
-                row["Notes"]    = str(e)[:120]
-            return [row]
-
-    def _parse_json_array(self, text: str) -> list:
-        text = text.strip()
-        for fence in ("```json", "```"):
-            if fence in text:
-                parts = text.split(fence, 1)
-                text = parts[1]
-                if "```" in text:
-                    text = text.split("```", 1)[0]
-                text = text.strip()
-                break
-        start = text.find("[")
-        end   = text.rfind("]")
-        if start != -1 and end != -1 and end > start:
-            text = text[start:end+1]
-        try:
-            data = json.loads(text)
-            return data if isinstance(data, list) else []
-        except json.JSONDecodeError:
-            return []
-
-    # ── Change detection ──────────────────────────────────────────────────────
-    def detect_os_changes(self, old_df: pd.DataFrame, new_df: pd.DataFrame) -> list:
-        return _diff_dataframes(
-            old_df, new_df,
-            key_cols=["OS Version"],
-            watch_cols=["Mainstream/Full Support End", "Extended/LTSC Support End",
-                        "Security/Standard Support End"]
+        response = self.client.messages.create(
+            model=self.model,
+            max_tokens=2000,
+            tools=[{"type": "web_search_20250305", "name": "web_search"}],
+            messages=[{"role": "user", "content": prompt}]
         )
 
-    def detect_db_changes(self, old_df: pd.DataFrame, new_df: pd.DataFrame) -> list:
-        return _diff_dataframes(
-            old_df, new_df,
-            key_cols=["Database", "Version"],
-            watch_cols=["Mainstream / Premier End", "Extended Support End", "Status"]
-        )
+        text = ""
+        for block in response.content:
+            if hasattr(block, "text"):
+                text += block.text
 
+        try:
+            clean = text.strip()
+            if "```json" in clean:
+                clean = clean.split("```json")[1].split("```")[0].strip()
+            elif "```" in clean:
+                clean = clean.split("```")[1].split("```")[0].strip()
+            start = clean.find("{")
+            end   = clean.rfind("}") + 1
+            if start != -1 and end > start:
+                return json.loads(clean[start:end])
+        except Exception:
+            pass
+        return {"family": family, "changes": []}
 
-def _diff_dataframes(old_df, new_df, key_cols, watch_cols) -> list:
-    changes = []
-    if old_df is None or old_df.empty:
-        return changes
+    def merge_updates_into_df(self, os_df, db_df, updates: dict):
+        """
+        Apply web-verified date changes to OS and DB dataframes.
+        Updates the Notes column to show [Web verified: value].
+        Returns (updated_os_df, updated_db_df, changes_log).
+        """
+        import pandas as pd
 
-    def make_key(row):
-        return " | ".join(str(row.get(c, "")) for c in key_cols)
+        os_df   = os_df.copy()
+        db_df   = db_df.copy()
+        changes = []
 
-    old_map = {make_key(r): dict(r) for _, r in old_df.iterrows()}
-    new_map = {make_key(r): dict(r) for _, r in new_df.iterrows()}
+        for family, result in updates.items():
+            if not result.get("changes"):
+                continue
 
-    for k, new_row in new_map.items():
-        if k.startswith("[Fetch error"):
-            continue
-        if k not in old_map:
-            changes.append(f"➕ NEW ENTRY: {k}")
-        else:
-            for col in watch_cols:
-                ov = str(old_map[k].get(col, "")).strip()
-                nv = str(new_row.get(col, "")).strip()
-                if ov != nv and nv not in ("", "nan"):
-                    changes.append(f"📅 CHANGED — {k} | {col}: '{ov}' → '{nv}'")
+            kind = result.get("kind", "OS")
 
-    for k in old_map:
-        if k not in new_map:
-            changes.append(f"➖ REMOVED: {k}")
+            for change in result["changes"]:
+                name      = change.get("name", "")
+                field     = change.get("field", "")
+                new_value = change.get("new_value", "")
+                new_status= change.get("status", "")
+                notes_ctx = change.get("notes", "")
 
-    return changes
+                if not name or not new_value:
+                    continue
+
+                # Try OS dataframe
+                if kind == "OS" or kind == "both":
+                    mask = os_df["OS Version"].str.contains(
+                        name.replace("(", r"\(").replace(")", r"\)"),
+                        case=False, na=False, regex=True
+                    )
+                    if mask.any():
+                        idx = os_df[mask].index[0]
+                        col_map = {
+                            "Mainstream": "Mainstream/Full Support End",
+                            "Extended":   "Extended/LTSC Support End",
+                            "Security":   "Security/Standard Support End",
+                            "Availability":"Availability Date",
+                        }
+                        col = next((v for k, v in col_map.items() if k.lower() in field.lower()),
+                                   "Mainstream/Full Support End")
+                        old = os_df.at[idx, col]
+                        if new_value and new_value != old:
+                            os_df.at[idx, col] = new_value
+                            note = str(os_df.at[idx, "Notes"] or "")
+                            os_df.at[idx, "Notes"] = f"{note} [Web: {new_value}]".strip()
+                            changes.append(f"OS: {name} | {col}: '{old}' → '{new_value}'")
+
+                # Try DB dataframe
+                if kind == "DB" or kind == "both":
+                    db_mask = (
+                        db_df["Database"].str.contains(name, case=False, na=False, regex=False) |
+                        (db_df["Database"] + " " + db_df["Version"]).str.contains(
+                            name, case=False, na=False, regex=False
+                        )
+                    )
+                    if db_mask.any():
+                        idx = db_df[db_mask].index[0]
+                        col_map = {
+                            "Mainstream":  "Mainstream / Premier End",
+                            "Extended":    "Extended Support End",
+                            "Status":      "Status",
+                        }
+                        col = next((v for k, v in col_map.items() if k.lower() in field.lower()),
+                                   "Mainstream / Premier End")
+                        old = db_df.at[idx, col]
+                        if new_value and new_value != old:
+                            db_df.at[idx, col] = new_value
+                            note = str(db_df.at[idx, "Notes"] or "")
+                            db_df.at[idx, "Notes"] = f"{note} [Web: {new_value}]".strip()
+                            changes.append(f"DB: {name} | {col}: '{old}' → '{new_value}'")
+                        if new_status and new_status != db_df.at[idx, "Status"]:
+                            old_s = db_df.at[idx, "Status"]
+                            db_df.at[idx, "Status"] = new_status
+                            changes.append(f"DB: {name} | Status: '{old_s}' → '{new_status}'")
+
+        return os_df, db_df, changes
