@@ -2,9 +2,8 @@
 Agent 5: Conversational Policy Analysis Agent
 ==============================================
 - SQLite persists full conversation across reruns/refreshes
-- Every chat response uses gpt-4o-mini-search-preview (Responses API)
-  so real-time web search covers costs, ESU prices, migration guides,
-  upgrade paths, extended support dates — anything the user asks
+- Uses gpt-4o-mini for conversation, gpt-4o-search-preview for real-time
+  web searches (costs, ESU pricing, migration guides, EOL dates)
 - Generates Guiding Principles from conversation
 - Final Recommendations cross-reference Agent 2 + policy context
 
@@ -175,7 +174,8 @@ class PolicyAnalysisAgent:
 
     def __init__(self, api_key: str):
         self.client = OpenAI(api_key=api_key)
-        self.model  = "gpt-4o-mini-search-preview"   # Real-time web search on every turn
+        self.model       = "gpt-4o-mini"          # Conversation model
+        self.search_model = "gpt-4o-search-preview"  # Web search model (real-time)
 
     @staticmethod
     def get_or_create_session() -> str:
@@ -234,13 +234,31 @@ class PolicyAnalysisAgent:
                 f"migration guides, or any real-time information."
             )
 
-        response = self.client.responses.create(
-            model=self.model,
-            instructions=CONVERSATION_SYSTEM,
-            tools=[{"type": "web_search_preview"}],
-            input=input_text
-        )
-        return (response.output_text or "").strip()
+        # Detect if input asks for real-time data (costs, prices, ESU)
+        needs_search = any(kw in input_text.lower() for kw in [
+            "cost", "price", "pricing", "esu", "extended support update",
+            "how much", "subscription", "licensing", "$", "per year",
+            "migration guide", "upgrade guide", "best practice"
+        ])
+
+        if needs_search:
+            # Use Responses API with web search for real-time data
+            response = self.client.responses.create(
+                model=self.search_model,
+                instructions=CONVERSATION_SYSTEM,
+                tools=[{"type": "web_search_preview"}],
+                input=input_text
+            )
+            return (response.output_text or "").strip()
+        else:
+            # Use chat completions for normal conversation (faster, cheaper)
+            response = self.client.chat.completions.create(
+                model=self.model,
+                max_tokens=600,
+                messages=[{"role": "system", "content": CONVERSATION_SYSTEM}] +
+                          ([{"role": "user", "content": input_text}] if input_text else [])
+            )
+            return response.choices[0].message.content.strip()
 
     def is_conversation_complete(self, reply: str) -> tuple:
         try:
@@ -314,7 +332,7 @@ class PolicyAnalysisAgent:
                 progress_cb(i / n, f"🔍 Searching live pricing: {vendor}...")
             try:
                 resp = self.client.responses.create(
-                    model=self.model,
+                    model=self.search_model,
                     tools=[{"type": "web_search_preview"}],
                     input=(
                         f"Search for: {query}\n\n"
