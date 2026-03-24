@@ -4,7 +4,7 @@ Agent 1: Internet Change Verifier
 The baseline_data.py already contains ALL known OS and DB versions.
 Agent 1's ONLY job is to check internet for lifecycle date changes.
 
-Uses OpenAI gpt-4o-search-preview (Responses API with web_search_preview).
+Uses OpenAI gpt-4o-mini (chat.completions) — no Responses API dependency.
 """
 
 from openai import OpenAI
@@ -55,7 +55,7 @@ DB_CHECK_TARGETS = [
 class OSDataAgent:
     def __init__(self, api_key: str):
         self.client = OpenAI(api_key=api_key)
-        self.model  = "gpt-4o-search-preview"   # OpenAI web search model
+        self.model  = "gpt-4o-mini"   # chat.completions — widely available
         self.today  = datetime.now().strftime("%d %B %Y")
 
     def fetch_updates(self, progress_callback=None) -> dict:
@@ -145,14 +145,14 @@ Return ONLY a JSON object (no markdown):
 Only include entries where you found CONFIRMED current data from official sources.
 If nothing has changed from known dates, return an empty changes array."""
 
-        # OpenAI Responses API with web_search_preview tool
-        response = self.client.responses.create(
+        # OpenAI chat completions — no Responses API needed
+        response = self.client.chat.completions.create(
             model=self.model,
-            tools=[{"type": "web_search_preview"}],
-            input=prompt
+            max_tokens=2000,
+            messages=[{"role": "user", "content": prompt}]
         )
 
-        text = response.output_text or ""
+        text = response.choices[0].message.content or ""
 
         try:
             clean = text.strip()
