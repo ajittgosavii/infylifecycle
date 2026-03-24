@@ -625,9 +625,401 @@ with tab_a5:
       </h2>
       <p style="margin:4px 0 0;font-size:0.8rem;opacity:0.8;">
         Project: <strong>1 Apr 2026 → 30 Jun 2028</strong> &nbsp;·&nbsp;
-        Policy interview → Guiding principles → Live cost data → Policy recommendations
+        Chat with Agent 5 → It collects your policy context → Generates Final Recommendations sheet
       </p>
     </div>""", unsafe_allow_html=True)
+
+    if not key_ok:
+        st.warning("⚠️ Enter your OpenAI API key in the sidebar to use Agent 5.")
+    else:
+        a5s = st.session_state.get("a5_status", "idle")
+
+        # ── Progress stepper ──────────────────────────────────────────────────
+        steps    = ["💬 Policy Chat", "⚖️ Principles", "💰 Cost Intel", "🧠 Analysis", "✅ Complete"]
+        step_map = {"idle":0,"chatting":0,"principles":1,"costing":2,
+                    "ready":2,"analysing":3,"done":4}
+        cur_step = step_map.get(a5s, 0)
+        s_cols   = st.columns(5)
+        for i, (col, lbl) in enumerate(zip(s_cols, steps)):
+            with col:
+                if i < cur_step:
+                    st.markdown(f"<div style='text-align:center;color:#10B981;font-size:0.8rem;'>✅ {lbl}</div>", unsafe_allow_html=True)
+                elif i == cur_step:
+                    st.markdown(f"<div style='text-align:center;color:#F59E0B;font-weight:700;font-size:0.8rem;'>● {lbl}</div>", unsafe_allow_html=True)
+                else:
+                    st.markdown(f"<div style='text-align:center;color:#94A3B8;font-size:0.8rem;'>○ {lbl}</div>", unsafe_allow_html=True)
+        st.divider()
+
+        # ── PHASE 1: CHAT ─────────────────────────────────────────────────────
+        if a5s in ("idle", "chatting"):
+
+            # Import SQLite helpers from agent
+            from agents.agent_analysis import (
+                _save_message, _load_messages, _save_session_context,
+                _list_sessions, _delete_session
+            )
+
+            # Show past sessions in expander
+            sessions = _list_sessions()
+            if sessions:
+                with st.expander(f"📂 Past conversations ({len(sessions)})", expanded=False):
+                    for sess in sessions:
+                        sc1, sc2, sc3 = st.columns([3, 1, 1])
+                        with sc1:
+                            st.markdown(
+                                f"**{sess['session']}** — {sess['summary'][:60]}  \n"
+                                f"<small>{sess['updated']} · {sess['status']}</small>",
+                                unsafe_allow_html=True
+                            )
+                        with sc2:
+                            if st.button("▶ Resume", key=f"res_{sess['session']}"):
+                                st.session_state.a5_session_id = sess["session"]
+                                st.session_state.a5_status     = sess["status"] if sess["status"] in ("chatting","ready","done") else "chatting"
+                                st.rerun()
+                        with sc3:
+                            if st.button("🗑 Delete", key=f"del_{sess['session']}"):
+                                _delete_session(sess["session"])
+                                st.rerun()
+
+            if a5s == "idle":
+                st.session_state.a5_status = "chatting"
+                session_id = PolicyAnalysisAgent.get_or_create_session()
+                # Kick off with agent's opening message
+                agent5  = PolicyAnalysisAgent(api_key=api_key)
+                opening = agent5.chat([])
+                _save_message(session_id, "assistant", opening)
+                st.rerun()
+
+            session_id = PolicyAnalysisAgent.get_or_create_session()
+
+            st.subheader("💬 Chat with Agent 5")
+            st.caption(
+                f"Session **{session_id}** · "
+                "Agent 5 searches the web in real-time for ESU costs, migration pricing, "
+                "upgrade guides and EOL dates as you chat. "
+                "When it has enough context it will automatically proceed."
+            )
+
+            # ── Render chat history from SQLite ───────────────────────────────
+            messages = _load_messages(session_id)
+            for msg in messages:
+                with st.chat_message(msg["role"],
+                                     avatar="🧠" if msg["role"] == "assistant" else "👤"):
+                    st.markdown(msg["content"])
+
+            # ── User input ────────────────────────────────────────────────────
+            if user_input := st.chat_input(
+                "Ask about costs, ESU pricing, migration options, or answer Agent 5's questions..."
+            ):
+                _save_message(session_id, "user", user_input)
+                with st.chat_message("user", avatar="👤"):
+                    st.markdown(user_input)
+
+                with st.chat_message("assistant", avatar="🧠"):
+                    with st.spinner("🔍 Agent 5 is searching and thinking..."):
+                        agent5 = PolicyAnalysisAgent(api_key=api_key)
+                        all_msgs = _load_messages(session_id)
+                        reply    = agent5.chat(all_msgs)
+
+                    done, context, summary = agent5.is_conversation_complete(reply)
+
+                    if done:
+                        complete_msg = (
+                            f"✅ **I have enough policy context to proceed.**\n\n"
+                            f"**Summary:** {summary}\n\n"
+                            f"Moving to Phase 2 — generating your Guiding Principles..."
+                        )
+                        st.markdown(complete_msg)
+                        _save_message(session_id, "assistant", complete_msg)
+                        _save_session_context(session_id, context, summary, "principles")
+                        st.session_state.a5_context = context
+                        st.session_state.a5_status  = "principles"
+                    else:
+                        st.markdown(reply)
+                        _save_message(session_id, "assistant", reply)
+                        _save_session_context(session_id, {}, "", "chatting")
+                st.rerun()
+
+            # ── Manual proceed + controls ─────────────────────────────────────
+            st.divider()
+            col_proceed, col_reset = st.columns([2, 1])
+            with col_proceed:
+                if len(messages) >= 6:
+                    if st.button("➡️ I've answered enough — proceed to analysis",
+                                 width="stretch"):
+                        agent5     = PolicyAnalysisAgent(api_key=api_key)
+                        all_msgs   = _load_messages(session_id)
+                        ctx_prompt = (
+                            "Extract policy context as JSON with keys: "
+                            "eol_tolerance, min_runway, compliance, esu_budget, "
+                            "windows_path, linux_path, db_path, oracle_stance, "
+                            "cloud_provider, migration_capacity, criticality, rollback. "
+                            "Return ONLY the JSON object."
+                        )
+                        try:
+                            r = agent5.client.chat.completions.create(
+                                model="gpt-4o-mini", max_tokens=600,
+                                messages=all_msgs + [{"role":"user","content":ctx_prompt}]
+                            )
+                            t = r.choices[0].message.content.strip()
+                            s, e = t.find("{"), t.rfind("}")
+                            context = json.loads(t[s:e+1]) if s != -1 and e > s else {}
+                        except Exception:
+                            context = {"note": "Extracted from conversation"}
+                        _save_session_context(session_id, context, "Manual proceed", "principles")
+                        st.session_state.a5_context = context
+                        st.session_state.a5_status  = "principles"
+                        st.rerun()
+            with col_reset:
+                if st.button("🔄 New Conversation", width="stretch"):
+                    PolicyAnalysisAgent.reset()
+                    st.rerun()
+
+        # ── PHASE 2: Generate Principles ──────────────────────────────────────
+        elif a5s == "principles":
+            st.subheader("⚖️ Generating Guiding Principles from your policy conversation...")
+            with st.spinner("OpenAI is synthesising your answers into Guiding Principles..."):
+                session_id = PolicyAnalysisAgent.get_or_create_session()
+                agent5     = PolicyAnalysisAgent(api_key=api_key)
+                principles = agent5.generate_principles(
+                    st.session_state.a5_context,
+                    session_id
+                )
+                st.session_state.a5_principles = principles
+                st.session_state.a5_status     = "costing"
+            st.rerun()
+
+        # ── PHASE 3: Cost Intelligence ─────────────────────────────────────────
+        elif a5s == "costing":
+            st.subheader("💰 Fetching Live Vendor Pricing...")
+            st.caption("Agent 5 is searching the web for current ESU costs, cloud DB pricing, RHEL subscription rates and migration tool costs.")
+            prog = st.progress(0, text="Searching live pricing...")
+            stat = st.empty()
+            def cost_cb(pct, msg):
+                prog.progress(min(pct, 1.0), text=msg)
+                stat.info(f"⏳ {msg}")
+            agent5 = PolicyAnalysisAgent(api_key=api_key)
+            costs  = agent5.fetch_costs(progress_cb=cost_cb)
+            st.session_state.a5_costs  = costs
+            st.session_state.a5_status = "ready"
+            st.rerun()
+
+        # ── PHASE 3 READY: Show principles + confirm ──────────────────────────
+        elif a5s == "ready":
+            principles = st.session_state.a5_principles
+            context    = st.session_state.a5_context
+
+            # Show policy summary from chat
+            if context:
+                with st.expander("📋 Policy Context extracted from conversation", expanded=False):
+                    for k, v in context.items():
+                        st.markdown(f"**{k.replace('_',' ').title()}:** {v}")
+
+            with st.expander(f"⚖️ {len(principles)} Guiding Principles generated", expanded=True):
+                c1, c2 = st.columns(2)
+                cat_colors = {"Risk":"#EF4444","Budget":"#F59E0B","OS":"#3B82F6",
+                              "Database":"#8B5CF6","Execution":"#10B981"}
+                for i, gp in enumerate(principles):
+                    cat   = gp.get("category","")
+                    color = cat_colors.get(cat, "#6B7280")
+                    with (c1 if i % 2 == 0 else c2):
+                        st.markdown(
+                            f"<div style='border-left:3px solid {color};padding:8px 12px;"
+                            f"border-radius:0 6px 6px 0;background:rgba(0,0,0,0.03);margin-bottom:8px;'>"
+                            f"<strong>{gp.get('code','?')}: {gp.get('title','?')}</strong> "
+                            f"<span style='font-size:0.7rem;color:{color};background:rgba(0,0,0,0.06);"
+                            f"padding:1px 6px;border-radius:8px;'>{cat}</span><br>"
+                            f"<span style='font-size:0.82rem;'>{gp.get('rule','')}</span><br>"
+                            f"<span style='font-size:0.75rem;color:#6B7280;'>Trigger: {gp.get('trigger','')}</span>"
+                            f"</div>", unsafe_allow_html=True)
+
+            with st.expander(f"💰 Vendor Cost Intelligence ({len(st.session_state.a5_costs)} sources)", expanded=False):
+                for vendor, summary in st.session_state.a5_costs.items():
+                    st.markdown(f"**{vendor}:** {summary}")
+
+            st.divider()
+            st.subheader("🚀 Ready to Generate Final Recommendations")
+
+            a2_os = (st.session_state.os_df["Recommendation"] != "").sum()
+            a2_db = (st.session_state.db_df["Recommendation"] != "").sum()
+            total_rows = len(st.session_state.os_df) + len(st.session_state.db_df)
+
+            if a2_os + a2_db == 0:
+                st.warning("⚠️ Run Agent 2 first — Final Recommendations are richer when Agent 2's technical advice is available.")
+            else:
+                st.success(f"✅ Agent 2 recommendations available: {a2_os} OS + {a2_db} DB rows")
+
+            st.info(
+                f"Agent 5 will now cross-reference **{total_rows} entries** against your "
+                f"**{len(principles)} Guiding Principles** and Agent 2's recommendations to produce "
+                f"a **Final Recommendation** column — this will appear as a separate sheet in the Excel export."
+            )
+
+            if st.button("▶ Generate Final Recommendations", type="primary", width="stretch"):
+                st.session_state.a5_status = "analysing"
+                st.rerun()
+            if st.button("💬 Continue the conversation / refine policy", width="stretch"):
+                st.session_state.a5_status = "chatting"
+                st.rerun()
+            if st.button("🔄 Start Over", width="stretch"):
+                PolicyAnalysisAgent.reset()
+                st.rerun()
+
+        # ── PHASE 4: Analysis ─────────────────────────────────────────────────
+        elif a5s == "analysing":
+            st.subheader("🧠 Agent 5 — Generating Final Recommendations...")
+
+            if "a5_log" not in st.session_state:
+                st.session_state.a5_log = []
+
+            def _log(icon, msg):
+                st.session_state.a5_log.append(f"{icon} {msg}")
+
+            log_box = st.container()
+            with log_box:
+                for entry in st.session_state.a5_log:
+                    if entry.startswith("❌"): st.error(entry)
+                    elif entry.startswith("⚠️"): st.warning(entry)
+                    elif entry.startswith("✅"): st.success(entry)
+                    else: st.info(entry)
+
+            prog_bar = st.progress(0, text="Starting...")
+            st.divider()
+
+            # Pre-flight
+            if not st.session_state.get("a5_preflight_done"):
+                _log("🔌", "**Step 1/4 — Testing OpenAI API connection...**")
+                try:
+                    from openai import OpenAI as _OAI
+                    _client = _OAI(api_key=api_key)
+                    _resp   = _client.chat.completions.create(
+                        model="gpt-4o-mini", max_tokens=10,
+                        messages=[{"role":"user","content":"Reply: READY"}]
+                    )
+                    _reply = _resp.choices[0].message.content.strip()
+                    _log("✅", f"**OpenAI API connected** — responded: **{_reply}**")
+                    st.session_state.a5_preflight_done = True
+                except Exception as _ex:
+                    _log("❌", f"**OpenAI API FAILED** — `{str(_ex)}`\n\nCheck: platform.openai.com/usage")
+                    with log_box: st.error(st.session_state.a5_log[-1])
+                    st.stop()
+                st.rerun()
+
+            # OS analysis
+            if not st.session_state.get("a5_os_done"):
+                agent5     = PolicyAnalysisAgent(api_key=api_key)
+                principles = st.session_state.a5_principles
+                costs      = st.session_state.a5_costs
+                context    = st.session_state.a5_context
+                total_os   = len(st.session_state.os_df)
+                _log("🧠", f"**Step 2/4 — Generating Final Recommendations for {total_os} OS entries...**")
+
+                live = st.empty()
+                def os5_cb(pct, msg):
+                    prog_bar.progress(min(pct*0.5, 0.5), text=msg)
+                    live.info(f"⏳ {msg}")
+
+                new_os = agent5.analyse_os(st.session_state.os_df, principles, costs, context, os5_cb)
+                st.session_state.os_df    = new_os
+                st.session_state.a5_os_done = True
+
+                if "Analysis Source" in new_os.columns:
+                    ai_c = (new_os["Analysis Source"] == "OpenAI").sum()
+                    rb_c = (new_os["Analysis Source"] == "Rule-based").sum()
+                    _log("✅" if rb_c == 0 else "⚠️",
+                         f"**OS done** — OpenAI: {ai_c} rows ✅" +
+                         (f" | Rule-based fallback: {rb_c} rows" if rb_c else ""))
+                st.rerun()
+
+            # DB analysis
+            if not st.session_state.get("a5_db_done"):
+                agent5     = PolicyAnalysisAgent(api_key=api_key)
+                principles = st.session_state.a5_principles
+                costs      = st.session_state.a5_costs
+                context    = st.session_state.a5_context
+                total_db   = len(st.session_state.db_df)
+                _log("🧠", f"**Step 3/4 — Generating Final Recommendations for {total_db} DB entries...**")
+
+                live2 = st.empty()
+                def db5_cb(pct, msg):
+                    prog_bar.progress(min(0.5 + pct*0.5, 1.0), text=msg)
+                    live2.info(f"⏳ {msg}")
+
+                new_db = agent5.analyse_db(st.session_state.db_df, principles, costs, context, db5_cb)
+                st.session_state.db_df    = new_db
+                st.session_state.a5_db_done = True
+
+                if "Analysis Source" in new_db.columns:
+                    ai_c = (new_db["Analysis Source"] == "OpenAI").sum()
+                    rb_c = (new_db["Analysis Source"] == "Rule-based").sum()
+                    _log("✅" if rb_c == 0 else "⚠️",
+                         f"**DB done** — OpenAI: {ai_c} rows ✅" +
+                         (f" | Rule-based fallback: {rb_c} rows" if rb_c else ""))
+                st.rerun()
+
+            _log("🏁", "**Step 4/4 — Final Recommendations complete. New sheet added to Excel export.**")
+            st.session_state.a5_status         = "done"
+            st.session_state.a5_preflight_done = False
+            st.session_state.a5_log            = []
+            st.rerun()
+
+        # ── PHASE 5: DONE ─────────────────────────────────────────────────────
+        elif a5s == "done":
+            st.success(
+                "✅ **Agent 5 complete!** "
+                "'Final Recommendation' and 'Final Verdict' columns added to OS and DB tabs. "
+                "A dedicated **Final Recommendations** sheet is included in the Excel export."
+            )
+
+            os_df_now = st.session_state.os_df
+            db_df_now = st.session_state.db_df
+
+            # AI vs rule-based breakdown
+            if "Analysis Source" in os_df_now.columns or "Analysis Source" in db_df_now.columns:
+                ai_os = (os_df_now.get("Analysis Source", pd.Series(dtype=str)) == "OpenAI").sum() if "Analysis Source" in os_df_now.columns else 0
+                rb_os = (os_df_now.get("Analysis Source", pd.Series(dtype=str)) == "Rule-based").sum() if "Analysis Source" in os_df_now.columns else 0
+                ai_db = (db_df_now.get("Analysis Source", pd.Series(dtype=str)) == "OpenAI").sum() if "Analysis Source" in db_df_now.columns else 0
+                rb_db = (db_df_now.get("Analysis Source", pd.Series(dtype=str)) == "Rule-based").sum() if "Analysis Source" in db_df_now.columns else 0
+                total_ai = ai_os + ai_db; total_rb = rb_os + rb_db
+                if total_ai > 0:
+                    st.info(f"🤖 **OpenAI generated {total_ai} Final Recommendations** (OS: {ai_os}, DB: {ai_db}) "
+                            f"| 📐 Rule-based fallback: {total_rb} rows")
+                else:
+                    st.warning("⚠️ OpenAI did not respond — all rows used rule-based analysis. Check API quota.")
+
+            # Verdict summary
+            verdicts = ["CRITICAL","UPGRADE NOW","EXTEND + PLAN","REPLACE","CLOUD MIGRATE","MONITOR"]
+            fv_col = "Final Verdict"
+            if fv_col in os_df_now.columns or fv_col in db_df_now.columns:
+                st.subheader("📊 Final Verdict Summary")
+                vcols = st.columns(6)
+                for i, v in enumerate(verdicts):
+                    os_c = int((os_df_now.get(fv_col, pd.Series(dtype=str)).str.upper().str.startswith(v.split()[0])).sum()) if fv_col in os_df_now.columns else 0
+                    db_c = int((db_df_now.get(fv_col, pd.Series(dtype=str)).str.upper().str.startswith(v.split()[0])).sum()) if fv_col in db_df_now.columns else 0
+                    with vcols[i]: st.metric(v, os_c+db_c, f"OS:{os_c} DB:{db_c}")
+
+            # Guiding principles used
+            principles = st.session_state.get("a5_principles", [])
+            if principles:
+                with st.expander(f"⚖️ {len(principles)} Guiding Principles used", expanded=False):
+                    for gp in principles:
+                        st.markdown(f"**{gp.get('code','?')}: {gp.get('title','?')}** — {gp.get('rule','')}")
+
+            st.divider()
+            col_chat, col_reset = st.columns(2)
+            with col_chat:
+                if st.button("💬 Continue conversation / refine policy", width="stretch"):
+                    st.session_state.a5_status   = "chatting"
+                    st.session_state.a5_os_done  = False
+                    st.session_state.a5_db_done  = False
+                    st.rerun()
+            with col_reset:
+                if st.button("🔄 Start fresh with new policy", width="stretch"):
+                    PolicyAnalysisAgent.reset()
+                    st.rerun()
+
+
+# ── Download Excel ─────────────────────────────────────────────────────────────
 
     if not key_ok:
         st.warning("⚠️ Enter your OpenAI API key in the sidebar to use Agent 5.")
@@ -650,11 +1042,24 @@ with tab_a5:
         if a5s in ("idle","interviewing"):
             if a5s == "idle": st.session_state.a5_status = "interviewing"
             st.subheader("📋 Phase 1 — Organisation Policy Interview")
-            st.caption("Answer 8 questions to define your migration policy.")
+            st.caption("Answer 15 questions across 5 categories to define your migration policy.")
             answers = st.session_state.a5_answers
             PQS = _m_analysis.POLICY_QUESTIONS
             with st.form("policy_form"):
+                current_cat = None
                 for q in PQS:
+                    cat = q.get("category", "")
+                    if cat != current_cat:
+                        current_cat = cat
+                        cat_icons = {
+                            "Risk & Compliance":    "🔒",
+                            "Budget & Commercial":  "💰",
+                            "OS Strategy":          "🖥️",
+                            "Database Strategy":    "🗄️",
+                            "Execution & Capacity": "⚙️",
+                        }
+                        icon = cat_icons.get(cat, "📋")
+                        st.markdown(f"---\n#### {icon} {cat}")
                     st.markdown(f"**{q['id'].upper()}. {q['q']}**")
                     current = answers.get(q["key"], q["opts"][0])
                     idx_val = q["opts"].index(current) if current in q["opts"] else 0
@@ -662,8 +1067,9 @@ with tab_a5:
                                        label_visibility="collapsed", key=f"pq_{q['key']}")
                     answers[q["key"]] = choice
                     st.markdown("")
-                submitted = st.form_submit_button("✅ Submit → Generate Guiding Principles",
-                                                   type="primary", width="stretch")
+                submitted = st.form_submit_button(
+                    "✅ Submit 15 Answers → Generate Guiding Principles",
+                    type="primary", width="stretch")
             if submitted:
                 st.session_state.a5_answers = answers
                 st.session_state.a5_status  = "principles"
