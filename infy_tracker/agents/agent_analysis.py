@@ -1,13 +1,6 @@
 """
 Agent 5: Conversational Policy Analysis Agent
-==============================================
-- SQLite persists full conversation across reruns/refreshes
-- Uses gpt-4o-mini (chat.completions) for all interactions
-  Cost/pricing questions answered from training knowledge with clear caveats
-- Generates Guiding Principles from conversation
-- Final Recommendations cross-reference Agent 2 + policy context
-
-Project window: 1 Apr 2026 → 30 Jun 2028
+Uses ONLY gpt-4o-mini via chat.completions — no Responses API, no search models.
 """
 from openai import OpenAI
 import json
@@ -23,162 +16,106 @@ DB_PATH     = os.path.join(os.path.dirname(__file__), "..", "agent5_conversation
 
 VERDICTS = ["CRITICAL", "UPGRADE NOW", "EXTEND + PLAN", "REPLACE", "CLOUD MIGRATE", "MONITOR"]
 
-# ── System prompt ─────────────────────────────────────────────────────────────
 CONVERSATION_SYSTEM = f"""You are Agent 5 — a senior IT migration strategist at Infosys.
-You are helping an enterprise architect define their OS and database migration policy
+Help an enterprise architect define their OS and database migration policy
 for a project running from 1 April 2026 to 30 June 2028.
 
-You have REAL-TIME WEB SEARCH capability. Use it to:
-- Look up current ESU/extended support pricing (Windows, SQL Server, Oracle, RHEL etc.)
-- Find latest EOL/lifecycle dates that may have changed
-- Research migration patterns, upgrade guides, best practices
-- Check cloud service pricing (Azure SQL, AWS RDS, Aurora etc.)
-- Answer any cost, licensing, or technical migration question accurately
+Have a NATURAL CONVERSATION. Ask ONE focused question at a time.
+For cost/pricing questions, use your training knowledge and give best estimates with caveats.
 
-Your job is to have a NATURAL CONVERSATION to understand the org's context.
-Ask ONE focused question at a time. Build on previous answers.
-
-Topics to cover (not all at once — weave them naturally):
-1. EOL risk tolerance — zero / compensating controls / ESU / CVE-based
+Cover these topics across the conversation:
+1. EOL risk tolerance
 2. Support runway needed at project end (Jun 2028)
-3. Budget — ESU approved? Tier-1 only? Cloud budget available?
-4. Compliance — PCI DSS / HIPAA / SOX / GDPR / internal only
-5. Windows EOL path — upgrade to Server 2025/Win11, ESU, Linux, Azure VD
-6. Linux/Unix/AIX/Solaris path — in-place upgrade, RHEL/Ubuntu standardise, containerise
-7. Database EOL path — in-place upgrade, open-source (PostgreSQL), cloud managed
-8. Oracle licensing stance — reducing spend vs strategic
-9. Cloud provider preference — Azure / AWS / GCP / on-prem
-10. Legacy DB stance — Informix, SAP ASE, Progress, Ingres, IBM IMS
-11. Migration capacity — how many systems can be migrated in the window
-12. System criticality tiers — what gets prioritised first
-13. Rollback/fallback policy for migrations
+3. Budget — ESU approved? Cloud budget?
+4. Compliance — PCI DSS / HIPAA / SOX / GDPR
+5. Windows EOL path
+6. Linux/Unix/AIX path
+7. Database EOL path
+8. Oracle licensing stance
+9. Cloud provider preference
+10. Legacy DB stance (Informix, SAP ASE, Progress, Ingres)
+11. Migration capacity
+12. System criticality tiers
+13. Rollback policy
 
-When the user asks about COSTS, PRICES, ESU rates, migration tools, upgrade guides,
-or any real-time information — SEARCH THE WEB and give them accurate current figures.
+After 10-15 exchanges with sufficient context, respond with ONLY this JSON:
+{{"ready": true, "summary": "2-3 sentence summary", "context": {{"key": "value"}}}}
+Today: {TODAY}. Project ends 30 Jun 2028."""
 
-RULES:
-- Ask 1 question at a time
-- If vague, ask a clarifying follow-up
-- Search the web whenever cost/pricing/migration guidance is involved
-- After 10-15 exchanges when you have sufficient policy context, respond with EXACTLY:
-  {{"ready": true, "summary": "2-3 sentence policy summary", "context": {{...key-value policy context...}}}}
-- Before that, respond naturally in plain English only
-- Today: {TODAY}. Project ends 30 Jun 2028."""
+PRINCIPLES_SYSTEM = """Generate 8-10 Guiding Principles (GP-01...GP-10) from a policy conversation.
+Return ONLY a JSON array:
+[{{"code":"GP-01","title":"Short title","rule":"One rule.","trigger":"If X then Y","category":"Risk|Budget|OS|Database|Execution"}}]"""
 
-PRINCIPLES_SYSTEM = """You are a senior IT migration strategist.
-Generate 8-10 Guiding Principles (GP-01...GP-10) from a policy conversation.
-Each must be specific, actionable, tied to what was discussed.
-Return ONLY a JSON array, no markdown:
-[{"code":"GP-01","title":"4-word title","rule":"One clear rule.","trigger":"If X → Y","category":"Risk|Budget|OS|Database|Execution"}]"""
-
-FINAL_REC_SYSTEM = f"""You are a senior IT migration strategist cross-referencing:
-1. Agent 2's expert technical recommendation
-2. Organisation policy context from the conversation
-3. Agreed Guiding Principles
-
-Project: 1 Apr 2026 → 30 Jun 2028. Today: {TODAY}
-
-For each record, produce a FINAL RECOMMENDATION that:
-- Starts with one verdict: CRITICAL / UPGRADE NOW / EXTEND + PLAN / REPLACE / CLOUD MIGRATE / MONITOR
-- Synthesises Agent 2's technical advice with org policy stance
-- Cites a GP code
-- Includes cost context where relevant
-- Is 2-3 sentences max
-
-Return ONLY valid JSON: {{"KEY": "VERDICT — recommendation. (GP-N)"}}"""
+FINAL_REC_SYSTEM = f"""Cross-reference Agent 2 technical recommendations with org policy to produce
+Final Recommendations. Project: 1 Apr 2026 to 30 Jun 2028. Today: {TODAY}.
+Start each with: CRITICAL / UPGRADE NOW / EXTEND + PLAN / REPLACE / CLOUD MIGRATE / MONITOR
+Return ONLY JSON: {{"KEY": "VERDICT — recommendation. (GP-N)"}}"""
 
 
 # ── SQLite helpers ─────────────────────────────────────────────────────────────
-def _get_db() -> sqlite3.Connection:
+def _get_db():
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS conversations (
-            id       INTEGER PRIMARY KEY AUTOINCREMENT,
-            session  TEXT NOT NULL,
-            role     TEXT NOT NULL,
-            content  TEXT NOT NULL,
-            ts       DATETIME DEFAULT CURRENT_TIMESTAMP
-        )""")
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS sessions (
-            session  TEXT PRIMARY KEY,
-            context  TEXT,
-            summary  TEXT,
-            status   TEXT DEFAULT 'chatting',
-            created  DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated  DATETIME DEFAULT CURRENT_TIMESTAMP
-        )""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS conversations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session TEXT NOT NULL, role TEXT NOT NULL,
+        content TEXT NOT NULL, ts DATETIME DEFAULT CURRENT_TIMESTAMP)""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS sessions (
+        session TEXT PRIMARY KEY, context TEXT, summary TEXT,
+        status TEXT DEFAULT 'chatting',
+        created DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated DATETIME DEFAULT CURRENT_TIMESTAMP)""")
     conn.commit()
     return conn
 
-
-def _save_message(session_id: str, role: str, content: str):
+def _save_message(session_id, role, content):
     conn = _get_db()
-    conn.execute(
-        "INSERT INTO conversations (session, role, content) VALUES (?,?,?)",
-        (session_id, role, content)
-    )
-    conn.execute(
-        "INSERT OR IGNORE INTO sessions (session) VALUES (?)", (session_id,)
-    )
-    conn.execute(
-        "UPDATE sessions SET updated=CURRENT_TIMESTAMP WHERE session=?", (session_id,)
-    )
-    conn.commit()
-    conn.close()
+    conn.execute("INSERT INTO conversations (session,role,content) VALUES (?,?,?)",
+                 (session_id, role, content))
+    conn.execute("INSERT OR IGNORE INTO sessions (session) VALUES (?)", (session_id,))
+    conn.execute("UPDATE sessions SET updated=CURRENT_TIMESTAMP WHERE session=?", (session_id,))
+    conn.commit(); conn.close()
 
-
-def _load_messages(session_id: str) -> list:
+def _load_messages(session_id):
     conn = _get_db()
     rows = conn.execute(
-        "SELECT role, content FROM conversations WHERE session=? ORDER BY id",
-        (session_id,)
-    ).fetchall()
+        "SELECT role,content FROM conversations WHERE session=? ORDER BY id",
+        (session_id,)).fetchall()
     conn.close()
     return [{"role": r, "content": c} for r, c in rows]
 
-
-def _save_session_context(session_id: str, context: dict, summary: str, status: str):
+def _save_session_context(session_id, context, summary, status):
     conn = _get_db()
-    conn.execute(
-        """INSERT INTO sessions (session, context, summary, status)
-           VALUES (?,?,?,?)
-           ON CONFLICT(session) DO UPDATE SET
-           context=excluded.context, summary=excluded.summary,
-           status=excluded.status, updated=CURRENT_TIMESTAMP""",
-        (session_id, json.dumps(context), summary, status)
-    )
-    conn.commit()
-    conn.close()
+    conn.execute("""INSERT INTO sessions (session,context,summary,status)
+        VALUES (?,?,?,?) ON CONFLICT(session) DO UPDATE SET
+        context=excluded.context, summary=excluded.summary,
+        status=excluded.status, updated=CURRENT_TIMESTAMP""",
+        (session_id, json.dumps(context), summary, status))
+    conn.commit(); conn.close()
 
-
-def _list_sessions() -> list:
+def _list_sessions():
     conn = _get_db()
     rows = conn.execute(
-        "SELECT session, summary, status, updated FROM sessions ORDER BY updated DESC LIMIT 20"
+        "SELECT session,summary,status,updated FROM sessions ORDER BY updated DESC LIMIT 20"
     ).fetchall()
     conn.close()
     return [{"session": r[0], "summary": r[1] or "In progress",
              "status": r[2], "updated": r[3]} for r in rows]
 
-
-def _delete_session(session_id: str):
+def _delete_session(session_id):
     conn = _get_db()
     conn.execute("DELETE FROM conversations WHERE session=?", (session_id,))
     conn.execute("DELETE FROM sessions WHERE session=?", (session_id,))
-    conn.commit()
-    conn.close()
+    conn.commit(); conn.close()
 
 
 class PolicyAnalysisAgent:
 
     def __init__(self, api_key: str):
         self.client = OpenAI(api_key=api_key)
-        self.model = "gpt-4o-mini"   # Chat completions — no Responses API needed
+        self.model  = "gpt-4o-mini"   # ONLY model used — chat.completions throughout
 
     @staticmethod
-    def get_or_create_session() -> str:
-        """Get current session ID from session_state or create new one."""
+    def get_or_create_session():
         if "a5_session_id" not in st.session_state:
             import uuid
             st.session_state.a5_session_id = str(uuid.uuid4())[:8]
@@ -187,14 +124,9 @@ class PolicyAnalysisAgent:
     @staticmethod
     def init_session():
         defaults = {
-            "a5_status":         "idle",
-            "a5_context":        {},
-            "a5_principles":     [],
-            "a5_costs":          {},
-            "a5_os_done":        False,
-            "a5_db_done":        False,
-            "a5_preflight_done": False,
-            "a5_log":            [],
+            "a5_status": "idle", "a5_context": {}, "a5_principles": [],
+            "a5_costs": {}, "a5_os_done": False, "a5_db_done": False,
+            "a5_preflight_done": False, "a5_log": [],
         }
         for k, v in defaults.items():
             if k not in st.session_state:
@@ -210,22 +142,19 @@ class PolicyAnalysisAgent:
             st.session_state.pop(k, None)
         PolicyAnalysisAgent.init_session()
 
-    # ── Chat with real-time web search ────────────────────────────────────────
     def chat(self, messages: list) -> str:
-        """Send conversation to gpt-4o-mini and get next response."""
-
-        # Use chat.completions for all conversation turns
-        # gpt-4o-mini handles cost/pricing questions from training knowledge
-        msgs = [{"role": "system", "content": CONVERSATION_SYSTEM}]
+        """Send conversation to gpt-4o-mini via chat.completions."""
+        api_messages = [{"role": "system", "content": CONVERSATION_SYSTEM}]
         if messages:
-            msgs += messages[-20:]   # last 20 for context
-        elif input_text:
-            msgs.append({"role": "user", "content": input_text})
+            api_messages += messages[-20:]
+        else:
+            api_messages.append({"role": "user",
+                                  "content": "Start the policy conversation now."})
 
         response = self.client.chat.completions.create(
             model=self.model,
             max_tokens=700,
-            messages=msgs
+            messages=api_messages
         )
         return response.choices[0].message.content.strip()
 
@@ -240,27 +169,19 @@ class PolicyAnalysisAgent:
             pass
         return False, {}, ""
 
-    # ── Generate Guiding Principles ───────────────────────────────────────────
     def generate_principles(self, context: dict, session_id: str) -> list:
         messages = _load_messages(session_id)
-        conv_text = "\n".join(
-            f"{'ARCHITECT' if m['role']=='user' else 'AGENT 5'}: {m['content'][:200]}"
-            for m in messages[-24:]
-        )
-        ctx_text = "\n".join(f"{k}: {v}" for k, v in context.items())
-        prompt = (
-            f"POLICY CONTEXT:\n{ctx_text}\n\n"
-            f"CONVERSATION:\n{conv_text}\n\n"
-            "Generate 8-10 Guiding Principles."
-        )
+        conv = "\n".join(
+            f"{'ARCHITECT' if m['role']=='user' else 'AGENT5'}: {m['content'][:200]}"
+            for m in messages[-24:])
+        ctx  = "\n".join(f"{k}: {v}" for k, v in context.items())
         try:
             resp = self.client.chat.completions.create(
-                model="gpt-4o-mini", max_tokens=2500,
+                model=self.model, max_tokens=2500,
                 messages=[
                     {"role": "system", "content": PRINCIPLES_SYSTEM},
-                    {"role": "user",   "content": prompt}
-                ]
-            )
+                    {"role": "user",   "content": f"CONTEXT:\n{ctx}\n\nCONVERSATION:\n{conv}"}
+                ])
             text = resp.choices[0].message.content.strip()
             if "```" in text:
                 text = text.split("```json")[-1].split("```")[0] if "```json" in text \
@@ -270,68 +191,57 @@ class PolicyAnalysisAgent:
                 return json.loads(text[s:e+1])
         except Exception:
             pass
-        return [{"code":"GP-01","title":"Zero EOL Tolerance",
-                 "rule":"No EOL software past 30 Jun 2028.",
-                 "trigger":"EOL before Jun 2028 → Upgrade","category":"Risk"}]
+        return [{"code": "GP-01", "title": "Zero EOL Tolerance",
+                 "rule": "No EOL software past 30 Jun 2028.",
+                 "trigger": "EOL before Jun 2028 → Upgrade", "category": "Risk"}]
 
-    # ── Cost intelligence (web search) ────────────────────────────────────────
     def fetch_costs(self, progress_cb=None) -> dict:
-        """
-        Fetches LIVE pricing for common migration decisions using web search.
-        Covers ESU, cloud DB, RHEL, Oracle support costs.
-        """
-        searches = [
-            ("Windows Server 2016/2019 ESU",
-             "Windows Server 2016 2019 Extended Security Updates cost per server per year 2025 2026 site:microsoft.com OR site:azure.microsoft.com"),
-            ("SQL Server 2016/2017/2019 ESU",
-             "SQL Server 2016 2017 2019 Extended Security Updates cost per core per year 2025 2026"),
+        queries = [
+            ("Windows Server ESU",
+             "Windows Server 2016 and 2019 Extended Security Updates estimated cost per server per year. Include Azure Arc free ESU option."),
+            ("SQL Server ESU",
+             "SQL Server 2016 2017 2019 Extended Security Updates estimated cost per core per year."),
             ("Oracle Database Support",
-             "Oracle Database annual support renewal cost 22 percent extended support surcharge 2026"),
-            ("RHEL Subscription Cost",
-             "Red Hat Enterprise Linux RHEL subscription cost per server per year standard premium 2026"),
-            ("Azure SQL / AWS RDS Pricing",
-             "Azure SQL Managed Instance AWS Aurora RDS PostgreSQL monthly cost per instance 2026"),
-            ("Migration Tools Cost",
-             "AWS Database Migration Service Azure Database Migration Service cost pricing 2026"),
+             "Oracle Database annual support cost approximately 22 percent of license. Extended support surcharge details."),
+            ("RHEL Subscription",
+             "Red Hat Enterprise Linux RHEL Standard and Premium subscription cost per server per year estimates."),
+            ("Cloud DB Pricing",
+             "Azure SQL Managed Instance and AWS RDS Aurora PostgreSQL approximate monthly cost per instance."),
+            ("Migration Tools",
+             "AWS Database Migration Service and Azure Database Migration Service approximate cost per hour."),
         ]
         costs = {}
-        n = len(searches)
-        for i, (vendor, query) in enumerate(searches):
+        fallbacks = {
+            "Windows Server ESU":
+                "Windows Server 2016 ESU: ~$198/server/yr (Yr1), ~$396 (Yr2). Free via Azure Arc. Server 2019: ESU from 2029.",
+            "SQL Server ESU":
+                "SQL Server 2016 ESU: ~$1,418/core/yr. SQL Server 2019 mainstream support ends Jan 2025; extended until Jan 2030 (no ESU needed yet).",
+            "Oracle Database Support":
+                "Oracle annual support: ~22% of license list price. Extended Support (years 4-5) adds 10% surcharge (~32% total).",
+            "RHEL Subscription":
+                "RHEL Standard: ~$800/yr/socket-pair. RHEL Premium (24x7 support): ~$1,300/yr/socket-pair.",
+            "Cloud DB Pricing":
+                "Azure SQL MI (4 vCores, GP): ~$465/mo. AWS RDS PostgreSQL db.t3.medium: ~$60/mo. Aurora PostgreSQL: ~$200/mo.",
+            "Migration Tools":
+                "AWS DMS: ~$0.18/hr per replication instance + data transfer. Azure DMS Standard: ~$0.10/hr.",
+        }
+        for i, (vendor, query) in enumerate(queries):
             if progress_cb:
-                progress_cb(i / n, f"🔍 Searching live pricing: {vendor}...")
+                progress_cb(i / len(queries), f"Fetching cost estimate: {vendor}...")
             try:
                 resp = self.client.chat.completions.create(
-                    model=self.model,
-                    max_tokens=300,
-                    messages=[{"role": "user", "content": (
-                        f"Based on your training knowledge, provide a 2-3 sentence cost summary "
-                        f"with specific figures for: {query}\n"
-                        f"Note if figures are approximate or may have changed since your training."
-                    )}]
-                )
+                    model=self.model, max_tokens=300,
+                    messages=[{"role": "user", "content":
+                        f"Based on your training knowledge, give a 2-3 sentence cost estimate for: {query}\n"
+                        f"Note that figures are approximate and may have changed since your training cutoff."}])
                 result = resp.choices[0].message.content.strip()
-                costs[vendor] = result if result else "Cost data not available."
-            except Exception as ex:
-                fallbacks = {
-                    "Windows Server 2016/2019 ESU":
-                        "Windows Server 2016 ESU Year 1: ~$198/server. Year 2: ~$396. Free via Azure Arc. (Source: Microsoft)",
-                    "SQL Server 2016/2017/2019 ESU":
-                        "SQL Server 2016 ESU: ~$1,418/core/year. SQL Server 2019: free until Jan 2030. (Source: Microsoft)",
-                    "Oracle Database Support":
-                        "Oracle annual support: 22% of license list price. Extended Support (years 4-5): +10% surcharge.",
-                    "RHEL Subscription Cost":
-                        "RHEL Standard: ~$800/yr/socket-pair. RHEL Premium: ~$1,300/yr. (Source: Red Hat)",
-                    "Azure SQL / AWS RDS Pricing":
-                        "Azure SQL MI: ~$465/mo (4 vCores). AWS RDS PostgreSQL db.t3.medium: ~$60/mo.",
-                    "Migration Tools Cost":
-                        "AWS DMS: ~$0.18/hr per replication instance. Azure DMS Standard: ~$0.10/hr.",
-                }
-                costs[vendor] = fallbacks.get(vendor, f"Live search unavailable: {str(ex)[:80]}")
+                costs[vendor] = result or fallbacks[vendor]
+            except Exception:
+                costs[vendor] = fallbacks[vendor]
         if progress_cb:
-            progress_cb(1.0, "✅ Live pricing data fetched.")
+            progress_cb(1.0, "✅ Cost estimates ready.")
         return costs
 
-    # ── Final Recommendations ─────────────────────────────────────────────────
     def analyse_os(self, df, principles, costs, context, progress_cb=None):
         return self._analyse(df, "OS", principles, costs, context, progress_cb)
 
@@ -340,18 +250,16 @@ class PolicyAnalysisAgent:
 
     def _analyse(self, df, kind, principles, costs, context, progress_cb):
         df = df.copy()
-        for col in ["Final Recommendation","Final Verdict","Analysis Source"]:
+        for col in ["Final Recommendation", "Final Verdict", "Analysis Source"]:
             if col not in df.columns:
                 df[col] = ""
 
         gp_text   = "\n".join(f"{p['code']}: {p['title']} — {p['rule']}" for p in principles)
         cost_text = "\n".join(f"{v}: {s}" for v, s in costs.items())
         ctx_text  = "\n".join(f"{k}: {v}" for k, v in context.items())
-        rows      = df.to_dict("records")
-        total     = len(rows)
-        batch     = 15
-        ai_count  = 0
-        rb_count  = 0
+        rows = df.to_dict("records")
+        total = len(rows); batch = 15
+        ai_count = 0; rb_count = 0
 
         for i in range(0, total, batch):
             chunk = rows[i:i+batch]
@@ -359,45 +267,36 @@ class PolicyAnalysisAgent:
                 progress_cb(i / total,
                     f"🧠 Generating Final Recommendations — {kind} rows {i+1}–{min(i+batch,total)} of {total}...")
 
-            if kind == "OS":
-                rows_text = "\n".join(
-                    f"KEY={r['OS Version']} | "
-                    f"Mainstream={r.get('Mainstream/Full Support End','')} | "
-                    f"Extended={r.get('Extended/LTSC Support End','')} | "
-                    f"Agent2={r.get('Recommendation','')[:120]}"
-                    for r in chunk
-                )
-            else:
-                rows_text = "\n".join(
-                    f"KEY={r['Database']} {r['Version']} | "
-                    f"Status={r.get('Status','')} | "
-                    f"Extended={r.get('Extended Support End','')} | "
-                    f"Replace={r.get('Replace','')} | Alt={r.get('Primary Alternative','')} | "
-                    f"Agent2={r.get('Recommendation','')[:120]}"
-                    for r in chunk
-                )
-
-            prompt = (
-                f"ORG POLICY CONTEXT:\n{ctx_text}\n\n"
-                f"GUIDING PRINCIPLES:\n{gp_text}\n\n"
-                f"LIVE VENDOR COSTS:\n{cost_text}\n\n"
-                f"PROJECT: 1 Apr 2026 → 30 Jun 2028 | Today: {TODAY}\n\n"
-                f"RECORDS:\n{rows_text}\n\n"
-                f"Return ONLY JSON: {{\"KEY\": \"VERDICT — Final rec. (GP-N)\"}}"
+            rows_text = "\n".join(
+                f"KEY={r['OS Version']} | Mainstream={r.get('Mainstream/Full Support End','')} | "
+                f"Extended={r.get('Extended/LTSC Support End','')} | "
+                f"Agent2={r.get('Recommendation','')[:120]}"
+                for r in chunk
+            ) if kind == "OS" else "\n".join(
+                f"KEY={r['Database']} {r['Version']} | Status={r.get('Status','')} | "
+                f"Extended={r.get('Extended Support End','')} | "
+                f"Replace={r.get('Replace','')} | Alt={r.get('Primary Alternative','')} | "
+                f"Agent2={r.get('Recommendation','')[:120]}"
+                for r in chunk
             )
 
-            recs = {}; api_worked = False; last_error = None
+            prompt = (f"ORG POLICY:\n{ctx_text}\n\nGUIDING PRINCIPLES:\n{gp_text}\n\n"
+                      f"VENDOR COSTS:\n{cost_text}\n\n"
+                      f"PROJECT: 1 Apr 2026 → 30 Jun 2028 | Today: {TODAY}\n\n"
+                      f"RECORDS:\n{rows_text}\n\n"
+                      f"Return ONLY JSON: {{\"KEY\": \"VERDICT — recommendation. (GP-N)\"}}")
+
+            recs = {}; api_worked = False
             for attempt in range(2):
                 try:
                     import time
                     if attempt > 0: time.sleep(2)
                     resp = self.client.chat.completions.create(
-                        model="gpt-4o-mini", max_tokens=4000,
+                        model=self.model, max_tokens=4000,
                         messages=[
                             {"role": "system", "content": FINAL_REC_SYSTEM},
                             {"role": "user",   "content": prompt}
-                        ]
-                    )
+                        ])
                     text = resp.choices[0].message.content.strip()
                     if "```" in text:
                         text = text.split("```json")[-1].split("```")[0] if "```json" in text \
@@ -408,10 +307,6 @@ class PolicyAnalysisAgent:
                         recs = parsed; api_worked = True; break
                 except Exception as ex:
                     last_error = str(ex)
-
-            if not api_worked and progress_cb:
-                progress_cb(i / total,
-                    f"⚠️ Batch {i+1}–{min(i+batch,total)} API error: {str(last_error)[:60]}")
 
             for j, row in enumerate(chunk):
                 key = row["OS Version"] if kind == "OS" \
@@ -428,8 +323,7 @@ class PolicyAnalysisAgent:
             import time as _t; _t.sleep(0.3)
 
         if progress_cb:
-            progress_cb(1.0,
-                f"✅ {kind} done — OpenAI: {ai_count} rows | Rule-based: {rb_count} rows")
+            progress_cb(1.0, f"✅ {kind} done — OpenAI: {ai_count} | Rule-based: {rb_count}")
         return df
 
     def _rule_based(self, row, kind):
@@ -439,7 +333,7 @@ class PolicyAnalysisAgent:
         if kind == "OS":
             end  = _parse(row.get("Extended/LTSC Support End","")) \
                 or _parse(row.get("Mainstream/Full Support End",""))
-            name = row.get("OS Version","?")
+            name = row.get("OS Version", "?")
         else:
             end  = _parse(row.get("Extended Support End","")) \
                 or _parse(row.get("Mainstream / Premier End",""))
