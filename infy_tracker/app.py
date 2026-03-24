@@ -52,6 +52,13 @@ _m_refresh   = _load("agents.agent_refresh",   "agents/agent_refresh.py")
 _m_version   = _load("agents.agent_versioning","agents/agent_versioning.py")
 _m_analysis  = _load("agents.agent_analysis",  "agents/agent_analysis.py")
 _m_export    = _load("utils.excel_export",     "utils/excel_export.py")
+_m_store     = _load("utils.data_store",       "utils/data_store.py")
+_m_risk      = _load("utils.risk_scoring",     "utils/risk_scoring.py")
+_m_dashboard = _load("utils.dashboard",        "utils/dashboard.py")
+_m_config    = _load("utils.config",           "utils/config.py")
+_m_inventory = _load("utils.inventory_upload",  "utils/inventory_upload.py")
+_m_scenario  = _load("utils.scenario_planner",  "utils/scenario_planner.py")
+_m_pdf       = _load("utils.pdf_report",        "utils/pdf_report.py")
 
 OSDataAgent          = _m_os.OSDataAgent
 RecommendationAgent  = _m_db.RecommendationAgent
@@ -63,6 +70,33 @@ OS_DATA              = _m_baseline.OS_DATA
 DB_DATA              = _m_baseline.DB_DATA
 OS_COLUMNS           = _m_baseline.OS_COLUMNS
 DB_COLUMNS           = _m_baseline.DB_COLUMNS
+
+# Data store helpers
+save_os_df      = _m_store.save_os_df
+save_db_df      = _m_store.save_db_df
+load_os_df      = _m_store.load_os_df
+load_db_df      = _m_store.load_db_df
+save_app_state  = _m_store.save_app_state
+load_app_state  = _m_store.load_app_state
+has_stored_data = _m_store.has_stored_data
+get_rec_stats   = _m_store.get_rec_stats
+
+# New enhancement modules
+add_risk_scores       = _m_risk.add_risk_scores
+get_risk_summary      = _m_risk.get_risk_summary
+risk_distribution_chart = _m_dashboard.risk_distribution_chart
+status_breakdown_chart  = _m_dashboard.status_breakdown_chart
+eol_timeline_chart      = _m_dashboard.eol_timeline_chart
+top_urgent_items        = _m_dashboard.top_urgent_items
+risk_score_histogram    = _m_dashboard.risk_score_histogram
+render_project_settings = _m_config.render_project_settings
+get_project_end         = _m_config.get_project_end
+render_upload_section   = _m_inventory.render_upload_section
+match_os_inventory      = _m_inventory.match_os_inventory
+match_db_inventory      = _m_inventory.match_db_inventory
+render_inventory_results = _m_inventory.render_inventory_results
+render_scenario_planner  = _m_scenario.render_scenario_planner
+generate_pdf_report      = _m_pdf.generate_pdf_report
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -104,19 +138,39 @@ st.markdown("""
 
 # ── Session state ─────────────────────────────────────────────────────────────
 def _init():
-    defaults = {
-        # Load baseline data immediately — visible before Agent 1 runs
-        "os_df":         pd.DataFrame(OS_DATA),
-        "db_df":         pd.DataFrame(DB_DATA),
-        "last_refresh":  None,
-        "a1_status":     "idle",
-        "a2_status":     "idle",
-        "changes_log":   [],
-        "old_os_df":     None,
-        "old_db_df":     None,
+    if "os_df" not in st.session_state:
+        # ── Load from SQLite if data exists, else load baseline and save it ──
+        if has_stored_data():
+            stored_os = load_os_df()
+            stored_db = load_db_df()
+            st.session_state["os_df"] = stored_os
+            st.session_state["db_df"] = stored_db
+        else:
+            # First ever run — load baseline and immediately persist to SQLite
+            baseline_os = pd.DataFrame(OS_DATA)
+            baseline_db = pd.DataFrame(DB_DATA)
+            save_os_df(baseline_os)
+            save_db_df(baseline_db)
+            st.session_state["os_df"] = baseline_os
+            st.session_state["db_df"] = baseline_db
+
+    # Restore last_refresh from SQLite so Agent 3 timer survives restarts
+    if "last_refresh" not in st.session_state:
+        saved_refresh = load_app_state("last_refresh")
+        if saved_refresh:
+            try:
+                st.session_state["last_refresh"] = datetime.fromisoformat(saved_refresh)
+            except Exception:
+                st.session_state["last_refresh"] = None
+        else:
+            st.session_state["last_refresh"] = None
+
+    # Other session defaults
+    for k, v in {
+        "a1_status": "idle", "a2_status": "idle",
+        "changes_log": [], "old_os_df": None, "old_db_df": None,
         "a3_skip_until": None,
-    }
-    for k, v in defaults.items():
+    }.items():
         if k not in st.session_state:
             st.session_state[k] = v
 
@@ -124,6 +178,12 @@ _init()
 refresh_agent = RefreshAgent()
 VersionGuardianAgent.init_session()
 PolicyAnalysisAgent.init_session()
+
+# ── Compute risk scores on every load ─────────────────────────────────────
+if "Risk Score" not in st.session_state.os_df.columns:
+    st.session_state.os_df = add_risk_scores(st.session_state.os_df, "OS")
+if "Risk Score" not in st.session_state.db_df.columns:
+    st.session_state.db_df = add_risk_scores(st.session_state.db_df, "DB")
 
 
 def badge(status: str) -> str:
@@ -152,32 +212,31 @@ with st.sidebar:
     elif key_ok: st.success("✅ API key ready")
     st.divider()
 
-    # Agent 1
+    # Agent 1 — Sentinel
     s1 = st.session_state.a1_status
     st.markdown(f"""<div class="agent-card a1">
-    <b>🔍 Agent 1 — Internet Change Checker</b><br>{badge(s1)}
+    <b>🔍 Sentinel — Lifecycle Scanner</b><br>{badge(s1)}
     <small style="display:block;margin-top:4px;color:#666">
-    Checks internet for lifecycle date changes.<br>
-    Data pre-loaded from OpenAI knowledge base<br>
-    ({len(OS_DATA)} OS + {len(DB_DATA)} DB = {len(OS_DATA)+len(DB_DATA)} entries)</small>
+    Scans the web for lifecycle date changes.<br>
+    Pre-loaded: {len(OS_DATA)} OS + {len(DB_DATA)} DB = {len(OS_DATA)+len(DB_DATA)} entries</small>
     </div>""", unsafe_allow_html=True)
-    run_a1 = st.button("▶ Run Agent 1 — Check for Updates", width="stretch", disabled=not key_ok)
+    run_a1 = st.button("▶ Run Sentinel — Scan for Updates", width="stretch", disabled=not key_ok)
     st.caption("⏱ ~2–3 min (16 targeted web checks)")
     st.divider()
 
-    # Agent 2
+    # Agent 2 — Advisor
     s2 = st.session_state.a2_status
     st.markdown(f"""<div class="agent-card a2">
-    <b>🤖 Agent 2 — Recommendation Engine</b><br>{badge(s2)}
+    <b>🤖 Advisor — AI Recommendation Engine</b><br>{badge(s2)}
     <small style="display:block;margin-top:4px;color:#666">
-    OpenAI fills Recommendation column for all rows</small>
+    Generates expert migration recommendations for all rows</small>
     </div>""", unsafe_allow_html=True)
-    run_a2 = st.button("▶ Run Agent 2 — Generate Recommendations", width="stretch", disabled=not key_ok)
+    run_a2 = st.button("▶ Run Advisor — Generate Recommendations", width="stretch", disabled=not key_ok)
     st.divider()
 
-    # Agent 3
+    # Agent 3 — Watchdog
     st.markdown("""<div class="agent-card a3">
-    <b>🔄 Agent 3 — Refresh Monitor</b>
+    <b>🔄 Watchdog — Refresh Monitor</b>
     <small style="display:block;margin-top:4px;color:#666">
     14-day schedule · seeks permission before re-running</small>
     </div>""", unsafe_allow_html=True)
@@ -188,14 +247,24 @@ with st.sidebar:
     )
     st.divider()
 
+    # ── Project Settings ──────────────────────────────────────────────────────
+    st.divider()
+    render_project_settings()
+    st.divider()
+
+    # ── Global Search ─────────────────────────────────────────────────────────
+    global_search = st.text_input("🔍 Search across all data", placeholder="e.g. Windows Server 2016, Oracle 19c...",
+                                   key="global_search")
+    st.divider()
+
     # Agent 4 / 5
     history = VersionGuardianAgent.get_history()
     a5s = st.session_state.get("a5_status", "idle")
     st.markdown(f"""<div class="agent-card a4">
-    <b>🛡️ Agent 4 — Version Guardian</b>
+    <b>🛡️ Guardian — Version Snapshot Manager</b>
     <small style="display:block;margin-top:4px;color:#666">{len(history)} snapshot(s)</small></div>
     <div class="agent-card a5">
-    <b>🧠 Agent 5 — Policy Analysis</b><br>{badge(a5s)}
+    <b>🧠 Strategist — Policy Analysis Engine</b><br>{badge(a5s)}
     <small style="display:block;margin-top:4px;color:#666">Apr 2026 → Jun 2028</small>
     </div>""", unsafe_allow_html=True)
     st.divider()
@@ -205,16 +274,45 @@ with st.sidebar:
     st.caption(f"📊 OS: **{len(st.session_state.os_df)}** · DB: **{len(st.session_state.db_df)}** rows")
     st.caption(f"💡 Recommendations: OS {os_recs} · DB {db_recs}")
 
+    # ── Persistence status ────────────────────────────────────────────────────
+    st.divider()
+    stats = get_rec_stats()
+    last_saved = stats.get("last_saved", "Never")
+    if last_saved and last_saved != "Never":
+        try:
+            last_saved = datetime.fromisoformat(last_saved).strftime("%d %b %Y %H:%M")
+        except Exception:
+            pass
+    if stats["os_with_recs"] > 0 or stats["db_with_recs"] > 0:
+        st.markdown(
+            f"<div style='background:#F0FDF4;border:1px solid #BBF7D0;border-radius:8px;"
+            f"padding:0.5rem 0.75rem;font-size:0.78rem;color:#166534;'>"
+            f"💾 <strong>Database</strong><br>"
+            f"OS: {stats['os_with_recs']}/{stats['os_total']} recs stored<br>"
+            f"DB: {stats['db_with_recs']}/{stats['db_total']} recs stored<br>"
+            f"Last saved: {last_saved}"
+            f"</div>", unsafe_allow_html=True
+        )
+    else:
+        st.markdown(
+            f"<div style='background:#FFF7ED;border:1px solid #FED7AA;border-radius:8px;"
+            f"padding:0.5rem 0.75rem;font-size:0.78rem;color:#92400E;'>"
+            f"💾 <strong>Database</strong><br>"
+            f"No recommendations stored yet.<br>"
+            f"Run Agent 2 to generate &amp; persist."
+            f"</div>", unsafe_allow_html=True
+        )
+
 
 # ── Header ────────────────────────────────────────────────────────────────────
-st.markdown("""
+st.markdown(f"""
 <div class="infy-header">
   <h1>🖥️ INFY Migration Version Lifecycle Tracker</h1>
   <p>Infosys Enterprise Architecture &nbsp;·&nbsp;
      Powered by OpenAI GPT &nbsp;·&nbsp;
-     Pre-loaded: 149 OS versions + 172 DB versions from AI knowledge base &nbsp;·&nbsp;
-     Agent 1 verifies date changes from the internet &nbsp;·&nbsp;
-     Project: Apr 2026 → Jun 2028</p>
+     {len(OS_DATA)} OS + {len(DB_DATA)} DB versions &nbsp;·&nbsp;
+     Risk Dashboard · Scenario Planner · Inventory Upload · PDF Reports &nbsp;·&nbsp;
+     5 AI Agents: Sentinel · Advisor · Watchdog · Guardian · Strategist</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -275,6 +373,9 @@ if run_a1:
             st.session_state.db_df,
             updates
         )
+        # Recompute risk scores after update
+        new_os = add_risk_scores(new_os, "OS")
+        new_db = add_risk_scores(new_db, "DB")
         st.session_state.os_df     = new_os
         st.session_state.db_df     = new_db
         st.session_state.changes_log = changes
@@ -282,6 +383,11 @@ if run_a1:
         st.session_state.a1_status    = "done"
         st.session_state.a5_os_done   = False
         st.session_state.a5_db_done   = False
+
+        # ── Persist Agent 1 date changes to SQLite ────────────────────────────
+        save_os_df(new_os)
+        save_db_df(new_db)
+        save_app_state("last_refresh", datetime.now().isoformat())
 
         if changes:
             st.success(f"✅ **Agent 1 complete!** Found **{len(changes)} date changes** from the internet.")
@@ -308,14 +414,25 @@ if run_a2:
 
     try:
         from openai import OpenAI as _OAI2
-        _c2    = _OAI2(api_key=api_key)
-        _r2    = _c2.chat.completions.create(
-            model="gpt-4o-mini",
-            max_tokens=20,
-            messages=[{"role": "user", "content": "Reply with one word: READY"}]
-        )
+        _c2 = _OAI2(api_key=api_key)
+        _model2 = None
+        for _m2 in ["gpt-4o-mini", "gpt-3.5-turbo", "gpt-3.5-turbo-0125"]:
+            try:
+                _r2 = _c2.chat.completions.create(
+                    model=_m2, max_tokens=20,
+                    messages=[{"role": "user", "content": "Reply: READY"}]
+                )
+                _model2 = _m2
+                st.session_state["_openai_model"] = _m2
+                break
+            except Exception as _me2:
+                if "not found" in str(_me2).lower() or "404" in str(_me2):
+                    continue
+                raise _me2
+        if not _model2:
+            raise Exception("No supported model found on this OpenAI account")
         _reply2 = _r2.choices[0].message.content.strip()
-        chk1.success(f"✅ **Checkpoint 1/4 PASSED** — OpenAI gpt-4o-mini connected. Response: **{_reply2}**")
+        chk1.success(f"✅ **Checkpoint 1/4 PASSED** — OpenAI `{_model2}` connected. Response: **{_reply2}**")
     except Exception as _ex2:
         chk1.error(
             f"❌ **Checkpoint 1/4 FAILED** — OpenAI API not reachable.\n\n"
@@ -342,8 +459,10 @@ if run_a2:
             st.session_state.os_df, progress_callback=a2_os_cb)
         st.session_state.os_df = new_os
         os_filled = (new_os["Recommendation"] != "").sum()
+        # ── Save OS recommendations to SQLite immediately ─────────────────────
+        save_os_df(new_os)
         chk2.success(f"✅ **Checkpoint 2/4 PASSED** — OS recommendations filled: "
-                     f"**{os_filled} / {len(new_os)} rows**")
+                     f"**{os_filled} / {len(new_os)} rows** · 💾 Saved to database")
     except Exception as e:
         chk2.error(f"❌ **Checkpoint 2/4 FAILED** — OS recommendations error: `{e}`")
         st.session_state.a2_status = "error"
@@ -363,36 +482,128 @@ if run_a2:
             st.session_state.db_df, progress_callback=a2_db_cb)
         st.session_state.db_df = new_db
         db_filled = (new_db["Recommendation"] != "").sum()
+        # ── Save DB recommendations to SQLite immediately ─────────────────────
+        save_db_df(new_db)
         chk3.success(f"✅ **Checkpoint 3/4 PASSED** — DB recommendations filled: "
-                     f"**{db_filled} / {len(new_db)} rows**")
+                     f"**{db_filled} / {len(new_db)} rows** · 💾 Saved to database")
     except Exception as e:
         chk3.error(f"❌ **Checkpoint 3/4 FAILED** — DB recommendations error: `{e}`")
         st.session_state.a2_status = "error"
         st.stop()
 
     # ── Checkpoint 4: Summary ─────────────────────────────────────────────────
-        os_filled = (st.session_state.os_df["Recommendation"] != "").sum()
-        db_filled = (st.session_state.db_df["Recommendation"] != "").sum()
-        total     = os_filled + db_filled
-        st.success(
-            f"✅ **Checkpoint 4/4 — Agent 2 COMPLETE** | "
-            f"OS: {os_filled}/{len(st.session_state.os_df)} rows | "
-            f"DB: {db_filled}/{len(st.session_state.db_df)} rows | "
-            f"Total: **{total} recommendations generated by OpenAI**"
-        )
-        st.session_state.a2_status = "done"
-        if st.session_state.last_refresh is None:
-            st.session_state.last_refresh = datetime.now()
+    os_filled = (st.session_state.os_df["Recommendation"] != "").sum()
+    db_filled = (st.session_state.db_df["Recommendation"] != "").sum()
+    total     = os_filled + db_filled
+    now       = datetime.now()
+    save_app_state("last_refresh", now.isoformat())
+    save_app_state("a2_last_run",  now.isoformat())
+    st.success(
+        f"✅ **Checkpoint 4/4 — Agent 2 COMPLETE** | "
+        f"OS: {os_filled}/{len(st.session_state.os_df)} rows | "
+        f"DB: {db_filled}/{len(st.session_state.db_df)} rows | "
+        f"Total: **{total} recommendations** · 💾 **Persisted to database**"
+    )
+    st.session_state.a2_status = "done"
+    if st.session_state.last_refresh is None:
+        st.session_state.last_refresh = now
 
     st.rerun()
 
 
 # ── Tabs ───────────────────────────────────────────────────────────────────────
-tab_os, tab_db, tab_status, tab_history, tab_a5 = st.tabs([
-    "🖥️ OS Versions", "🗄️ DB Versions",
+tab_dash, tab_os, tab_db, tab_inv, tab_scenario, tab_status, tab_history, tab_a5 = st.tabs([
+    "📊 Dashboard", "🖥️ OS Versions", "🗄️ DB Versions",
+    "📤 Inventory Upload", "🔮 What-If Planner",
     "📋 Agent Status & Log", "🛡️ Version History",
     "🧠 Agent 5 — Policy Analysis"
 ])
+
+
+# ────────────────── Tab 0: Executive Dashboard ────────────────────────────────
+with tab_dash:
+    st.subheader("📊 Executive Risk Dashboard")
+    st.caption("Real-time risk analysis across your entire OS & DB portfolio")
+
+    # Top-level KPI metrics
+    os_df_d = st.session_state.os_df
+    db_df_d = st.session_state.db_df
+    risk_summary = get_risk_summary(os_df_d, db_df_d)
+    total_items = len(os_df_d) + len(db_df_d)
+
+    k1, k2, k3, k4, k5, k6 = st.columns(6)
+    with k1: st.metric("Total Portfolio", total_items)
+    with k2: st.metric("🔴 Critical", risk_summary["CRITICAL"])
+    with k3: st.metric("🟠 High", risk_summary["HIGH"])
+    with k4: st.metric("🟡 Medium", risk_summary["MEDIUM"])
+    with k5: st.metric("🟢 Low", risk_summary["LOW"])
+    with k6: st.metric("✅ Minimal", risk_summary["MINIMAL"])
+
+    st.divider()
+
+    # Charts row 1
+    ch1, ch2 = st.columns(2)
+    with ch1:
+        fig_risk = risk_distribution_chart(os_df_d, db_df_d)
+        st.plotly_chart(fig_risk, use_container_width=True)
+    with ch2:
+        fig_bar = status_breakdown_chart(os_df_d, db_df_d)
+        st.plotly_chart(fig_bar, use_container_width=True)
+
+    st.divider()
+
+    # EOL Timeline
+    fig_timeline = eol_timeline_chart(os_df_d, db_df_d)
+    st.plotly_chart(fig_timeline, use_container_width=True)
+
+    st.divider()
+
+    # Top urgent items table
+    ch3, ch4 = st.columns([3, 2])
+    with ch3:
+        st.subheader("🚨 Top 10 Most Urgent Items")
+        urgent = top_urgent_items(os_df_d, db_df_d, n=10)
+        if not urgent.empty:
+            st.dataframe(urgent, height=380, hide_index=True, use_container_width=True)
+        else:
+            st.info("Risk scores not yet computed.")
+    with ch4:
+        fig_hist = risk_score_histogram(os_df_d, db_df_d)
+        st.plotly_chart(fig_hist, use_container_width=True)
+
+    # Quick filter: items expiring during project window
+    st.divider()
+    st.subheader("⚠️ Items Expiring During Project Window")
+    from datetime import date as _date
+    proj_end = get_project_end()
+    proj_start = st.session_state.get("project_start", _date(2026, 4, 1))
+    expiring_os = os_df_d[
+        os_df_d["Days Until EOL"].apply(
+            lambda d: d is not None and 0 < d <= (proj_end - _date.today()).days
+        )
+    ] if "Days Until EOL" in os_df_d.columns else pd.DataFrame()
+    expiring_db = db_df_d[
+        db_df_d["Days Until EOL"].apply(
+            lambda d: d is not None and 0 < d <= (proj_end - _date.today()).days
+        )
+    ] if "Days Until EOL" in db_df_d.columns else pd.DataFrame()
+
+    exp_count = len(expiring_os) + len(expiring_db)
+    if exp_count > 0:
+        st.warning(f"**{exp_count} items** have support ending before {proj_end.strftime('%d %b %Y')}")
+        ex1, ex2 = st.columns(2)
+        with ex1:
+            if not expiring_os.empty:
+                st.caption(f"OS: {len(expiring_os)} items expiring")
+                show_cols = [c for c in ["OS Version", "Days Until EOL", "Risk Score", "Risk Level", "Recommendation"] if c in expiring_os.columns]
+                st.dataframe(expiring_os[show_cols].sort_values("Days Until EOL"), hide_index=True, height=250)
+        with ex2:
+            if not expiring_db.empty:
+                st.caption(f"DB: {len(expiring_db)} items expiring")
+                show_cols = [c for c in ["Database", "Version", "Days Until EOL", "Risk Score", "Risk Level", "Recommendation"] if c in expiring_db.columns]
+                st.dataframe(expiring_db[show_cols].sort_values("Days Until EOL"), hide_index=True, height=250)
+    else:
+        st.success("No items expiring during the project window.")
 
 
 # ────────────────── Tab 1: OS Versions ────────────────────────────────────────
@@ -437,6 +648,10 @@ with tab_os:
         with fc4: rec_f  = st.selectbox("Has Recommendation", ["All","Yes","No"])
 
     view = os_df.copy()
+    # Global search filter
+    gs = st.session_state.get("global_search", "").strip()
+    if gs:
+        view = view[view.apply(lambda r: gs.lower() in " ".join(str(v) for v in r.values).lower(), axis=1)]
     if fam_f  != "All": view = view[view["OS Version"].str.startswith(fam_f, na=False)]
     if upg_f  != "All": view = view[view.get("Upgrade", pd.Series(dtype=str)) == upg_f]
     if repl_f != "All": view = view[view.get("Replace", pd.Series(dtype=str)) == repl_f]
@@ -455,10 +670,20 @@ with tab_os:
         "Replace":                       st.column_config.TextColumn("🔁 Replace",        width=80),
         "Primary Alternative":           st.column_config.TextColumn("Primary Alt",       width=160),
     }
+    if "Risk Score" in view.columns:
+        disp["Risk Score"] = st.column_config.NumberColumn("🎯 Risk", width=70)
+    if "Risk Level" in view.columns:
+        disp["Risk Level"] = st.column_config.TextColumn("Risk Level", width=90)
+    if "Days Until EOL" in view.columns:
+        disp["Days Until EOL"] = st.column_config.NumberColumn("📅 Days to EOL", width=100)
     if "Policy Recommendation" in view.columns:
         disp["Policy Recommendation"] = st.column_config.TextColumn("🏛️ Policy Rec", width=360)
     if "Verdict" in view.columns:
         disp["Verdict"] = st.column_config.TextColumn("Verdict", width=120)
+    # Hide internal color column
+    hide_cols = [c for c in ["Risk Color"] if c in view.columns]
+    if hide_cols:
+        view = view.drop(columns=hide_cols)
 
     st.caption(f"Showing {len(view)} of {len(os_df)} OS entries")
     st.dataframe(view, width="stretch", height=520, hide_index=True, column_config=disp)
@@ -495,6 +720,10 @@ with tab_db:
             repl_db_f = st.selectbox("Replace", ["All","Y","N"], key="repl_db")
 
     view_db = db_df.copy()
+    # Global search filter
+    gs = st.session_state.get("global_search", "").strip()
+    if gs:
+        view_db = view_db[view_db.apply(lambda r: gs.lower() in " ".join(str(v) for v in r.values).lower(), axis=1)]
     if db_f      != "All": view_db = view_db[view_db["Database"] == db_f]
     if type_f    != "All": view_db = view_db[view_db["Type"]     == type_f]
     if stat_f    != "All": view_db = view_db[view_db["Status"]   == stat_f]
@@ -520,16 +749,54 @@ with tab_db:
         "Replace":                 st.column_config.TextColumn("🔁 Replace",      width=80),
         "Primary Alternative":     st.column_config.TextColumn("Primary Alt",     width=150),
     }
+    if "Risk Score" in view_db.columns:
+        db_disp["Risk Score"] = st.column_config.NumberColumn("🎯 Risk", width=70)
+    if "Risk Level" in view_db.columns:
+        db_disp["Risk Level"] = st.column_config.TextColumn("Risk Level", width=90)
+    if "Days Until EOL" in view_db.columns:
+        db_disp["Days Until EOL"] = st.column_config.NumberColumn("📅 Days to EOL", width=100)
     if "Policy Recommendation" in view_db.columns:
         db_disp["Policy Recommendation"] = st.column_config.TextColumn("🏛️ Policy Rec", width=360)
     if "Verdict" in view_db.columns:
         db_disp["Verdict"] = st.column_config.TextColumn("Verdict", width=120)
+    # Hide internal color column
+    hide_cols = [c for c in ["Risk Color"] if c in view_db.columns]
+    if hide_cols:
+        view_db = view_db.drop(columns=hide_cols)
 
     st.caption(f"Showing {len(view_db)} of {len(db_df)} DB entries")
     st.dataframe(
         view_db.style.map(_style_status, subset=["Status"]) if "Status" in view_db.columns else view_db,
         width="stretch", height=520, hide_index=True, column_config=db_disp
     )
+
+
+# ────────────────── Tab: Inventory Upload ──────────────────────────────────────
+with tab_inv:
+    st.subheader("📤 Your Infrastructure Inventory")
+    matched_os_inv, matched_db_inv = render_upload_section()
+
+    if matched_os_inv is not None:
+        with st.spinner("Matching OS inventory against lifecycle data..."):
+            enriched_os = match_os_inventory(matched_os_inv, st.session_state.os_df)
+            st.session_state["inv_matched_os"] = enriched_os
+
+    if matched_db_inv is not None:
+        with st.spinner("Matching DB inventory against lifecycle data..."):
+            enriched_db = match_db_inventory(matched_db_inv, st.session_state.db_df)
+            st.session_state["inv_matched_db"] = enriched_db
+
+    # Show previously matched results
+    stored_os_inv = st.session_state.get("inv_matched_os")
+    stored_db_inv = st.session_state.get("inv_matched_db")
+    if stored_os_inv is not None or stored_db_inv is not None:
+        st.divider()
+        render_inventory_results(stored_os_inv, stored_db_inv)
+
+
+# ────────────────── Tab: What-If Scenario Planner ─────────────────────────────
+with tab_scenario:
+    render_scenario_planner(st.session_state.os_df, st.session_state.db_df)
 
 
 # ────────────────── Tab 3: Agent Status ───────────────────────────────────────
@@ -540,17 +807,17 @@ with tab_status:
     s1 = st.session_state.a1_status
     with ca1:
         icon1 = {"idle":"⚪","running":"🔵","done":"✅","error":"❌"}.get(s1,"⚪")
-        st.markdown(f"""**{icon1} Agent 1 — Internet Change Checker**
+        st.markdown(f"""**{icon1} Sentinel — Lifecycle Scanner**
 - Status: `{s1.upper()}`
-- Baseline: **{len(OS_DATA)} OS + {len(DB_DATA)} DB** rows pre-loaded from OpenAI knowledge
-- Task: Checks internet for lifecycle date changes only
-- Tool: `gpt-4o-mini (16 targeted checks)
+- Baseline: **{len(OS_DATA)} OS + {len(DB_DATA)} DB** rows pre-loaded
+- Task: Scans web for lifecycle date changes
+- Tool: gpt-4o-mini (16 targeted checks)
 - Updates: Notes column with [Web verified: date]""")
 
     s2 = st.session_state.a2_status
     with ca2:
         icon2 = {"idle":"⚪","running":"🔵","done":"✅","error":"❌"}.get(s2,"⚪")
-        st.markdown(f"""**{icon2} Agent 2 — Recommendation Engine**
+        st.markdown(f"""**{icon2} Advisor — AI Recommendation Engine**
 - Status: `{s2.upper()}`
 - Tool: gpt-4o-mini (cost-efficient)
 - Batch: 20 rows per API call
@@ -563,7 +830,7 @@ with tab_status:
         due      = refresh_agent.is_refresh_due(last_r)
         icon3    = "🟡" if due else ("✅" if last_r else "⚪")
         last_str = last_r.strftime("%d %b %Y %H:%M") if last_r else "Never"
-        st.markdown(f"""**{icon3} Agent 3 — Refresh Monitor**
+        st.markdown(f"""**{icon3} Watchdog — Refresh Monitor**
 - Status: `{"REFRESH DUE" if due else ("MONITORING" if last_r else "WAITING")}`
 - Interval: Every 14 days
 - Last check: {last_str}
@@ -573,15 +840,15 @@ with tab_status:
     ca4, ca5 = st.columns(2)
     with ca4:
         h = VersionGuardianAgent.get_history()
-        st.markdown(f"""**🛡️ Agent 4 — Version Guardian**
+        st.markdown(f"""**🛡️ Guardian — Version Snapshot Manager**
 - Snapshots: **{len(h)}** stored
-- Auto-runs before every Agent 1 refresh
+- Auto-runs before every Sentinel refresh
 - Preserves Recommendation + Policy columns
 - Max 10 versions in session""")
     with ca5:
         a5s = st.session_state.get("a5_status","idle")
         gps = st.session_state.get("a5_principles",[])
-        st.markdown(f"""**🧠 Agent 5 — Policy Analysis**
+        st.markdown(f"""**🧠 Strategist — Policy Analysis**
 - Status: `{a5s.upper()}`
 - Principles generated: **{len(gps)}**
 - Project: 1 Apr 2026 → 30 Jun 2028
@@ -598,14 +865,16 @@ with tab_status:
     st.divider()
     st.subheader("📖 How to Use")
     st.markdown(f"""
-**Data is pre-loaded** — {len(OS_DATA)} OS versions and {len(DB_DATA)} DB versions are visible immediately from AI knowledge base.
+**Data is pre-loaded** — {len(OS_DATA)} OS + {len(DB_DATA)} DB versions with risk scores computed automatically.
 
-1. **Enter your OpenAI API key** in the sidebar (or add `OPENAI_API_KEY` to Streamlit Cloud Secrets)
-2. **Run Agent 2** — OpenAI fills expert recommendations for all {len(OS_DATA)+len(DB_DATA)} rows (recommended first step)
-3. **Run Agent 1** — checks internet for any date changes since the baseline was created
-4. **Run Agent 5** (Policy Analysis tab) — policy interview → guiding principles → migration verdicts
-5. **Download Excel** — all data, colour-coded, with recommendations
-6. **Agent 3** prompts you every 14 days to re-run Agent 1 and pick up any new changes
+1. **📊 Dashboard** — View your risk posture at a glance with interactive charts
+2. **Run Advisor** — AI generates expert recommendations for all {len(OS_DATA)+len(DB_DATA)} rows
+3. **Run Sentinel** — Scans the internet for lifecycle date changes
+4. **📤 Upload Inventory** — Upload your actual server/DB CSV to see your specific risk
+5. **🔮 What-If Planner** — Simulate upgrades and see before/after risk reduction
+6. **🧠 Strategist** (Policy Analysis) — Conversational policy interview → verdicts
+7. **Download Excel/PDF** — Full data export or executive summary report
+8. **Watchdog** auto-prompts every 14 days to re-scan for changes
     """)
 
 
@@ -816,18 +1085,28 @@ with tab_a5:
                         st.markdown(user_input)
 
                     with st.chat_message("assistant", avatar="🧠"):
-                        with st.spinner("🔍 Agent 5 is searching and thinking..."):
+                        with st.spinner("🔍 Agent 5 is thinking..."):
                             agent5   = PolicyAnalysisAgent(api_key=api_key)
                             all_msgs = _load_messages(session_id)
                             reply    = agent5.chat(all_msgs)
 
-                        done, context, summary = agent5.is_conversation_complete(reply)
+                        # Adaptive completion — accepts 4+ exchanges, fills defaults for gaps
+                        done, context, summary, inferred = agent5.is_conversation_complete(
+                            reply, message_count=len(all_msgs) + 1)
 
                         if done:
+                            inferred_note = ""
+                            if inferred:
+                                inferred_note = (
+                                    f"\n\n💡 **Topics using defaults** (not explicitly discussed): "
+                                    f"{', '.join(inferred)}. "
+                                    f"These can be refined by continuing the conversation."
+                                )
                             complete_msg = (
                                 f"✅ **I have enough policy context to proceed.**\n\n"
-                                f"**Policy Summary:** {summary}\n\n"
-                                f"Moving to Phase 2 — generating your Guiding Principles..."
+                                f"**Policy Summary:** {summary}"
+                                f"{inferred_note}\n\n"
+                                f"Moving to Phase 2 — generating Guiding Principles..."
                             )
                             st.markdown(complete_msg)
                             _save_message(session_id, "assistant", complete_msg)
@@ -840,26 +1119,58 @@ with tab_a5:
                             _save_session_context(session_id, {}, "", "chatting")
                     st.rerun()
 
-            # ── Controls ──────────────────────────────────────────────────────
+            # ── Topic coverage + controls ─────────────────────────────────────
             if messages:
+                TOPIC_LABELS = {
+                    "eol_tolerance": "EOL risk tolerance",  "min_runway": "Support runway",
+                    "esu_budget": "ESU budget",             "compliance": "Compliance scope",
+                    "windows_path": "Windows path",         "linux_path": "Linux/Unix path",
+                    "db_eol_path": "DB EOL path",           "oracle_stance": "Oracle stance",
+                    "cloud_provider": "Cloud provider",     "legacy_db": "Legacy DBs",
+                    "capacity": "Migration capacity",        "criticality": "System priority",
+                    "rollback": "Rollback policy",
+                }
+                saved_ctx = st.session_state.get("a5_context", {})
+                explicit  = [k for k, l in TOPIC_LABELS.items()
+                             if saved_ctx.get(k,"").strip() and not saved_ctx.get(k,"").startswith("[Default]")]
+                msg_count = len(messages)
+                pct       = int(len(explicit) / len(TOPIC_LABELS) * 100)
+
+                if msg_count >= 8:
+                    colour = "#F0FDF4"; border = "#BBF7D0"; text_c = "#166534"
+                    note   = f"✅ {len(explicit)}/{len(TOPIC_LABELS)} topics explicitly covered"
+                else:
+                    colour = "#FFF7ED"; border = "#FED7AA"; text_c = "#92400E"
+                    note   = f"💬 {len(explicit)}/{len(TOPIC_LABELS)} topics covered · keep chatting or proceed when ready"
+
+                st.markdown(
+                    f"<div style='background:{colour};border:1px solid {border};"
+                    f"border-radius:8px;padding:0.5rem 0.9rem;font-size:0.8rem;color:{text_c};'>"
+                    f"{note} · {msg_count} messages<br>"
+                    f"<span style='color:#6B7280;font-size:0.75rem;'>"
+                    f"Missing topics will use enterprise defaults — you can refine anytime</span>"
+                    f"</div>", unsafe_allow_html=True)
+
                 st.divider()
                 col_proceed, col_reset = st.columns([2, 1])
                 with col_proceed:
-                    if len(messages) >= 6:
-                        if st.button("➡️ Enough context — proceed to Guiding Principles",
+                    # Allow manual proceed after just 4 exchanges (8 messages)
+                    if len(messages) >= 8:
+                        if st.button("➡️ Proceed to Guiding Principles",
                                      type="primary", width="stretch"):
                             agent5     = PolicyAnalysisAgent(api_key=api_key)
                             all_msgs   = _load_messages(session_id)
                             ctx_prompt = (
-                                "Extract policy context as JSON with keys: "
-                                "eol_tolerance, min_runway, compliance, esu_budget, "
-                                "windows_path, linux_path, db_path, oracle_stance, "
-                                "cloud_provider, migration_capacity, criticality, rollback. "
+                                "Extract all policy context discussed so far as JSON with these keys: "
+                                "eol_tolerance, min_runway, esu_budget, compliance, "
+                                "windows_path, linux_path, db_eol_path, oracle_stance, "
+                                "cloud_provider, legacy_db, capacity, criticality, rollback. "
+                                "For any topic NOT discussed, use '[Default] <sensible enterprise default>'. "
                                 "Return ONLY the JSON object."
                             )
                             try:
                                 r = agent5.client.chat.completions.create(
-                                    model="gpt-4o-mini", max_tokens=600,
+                                    model="gpt-4o-mini", max_tokens=700,
                                     messages=all_msgs + [{"role":"user","content":ctx_prompt}]
                                 )
                                 t = r.choices[0].message.content.strip()
@@ -871,6 +1182,9 @@ with tab_a5:
                             st.session_state.a5_context = context
                             st.session_state.a5_status  = "principles"
                             st.rerun()
+                    else:
+                        remaining = max(0, 8 - len(messages))
+                        st.caption(f"💬 {remaining} more message(s) before you can proceed manually")
                 with col_reset:
                     if st.button("🔄 New Conversation", width="stretch"):
                         PolicyAnalysisAgent.reset()
@@ -912,9 +1226,13 @@ with tab_a5:
 
             # Show policy summary from chat
             if context:
-                with st.expander("📋 Policy Context extracted from conversation", expanded=False):
+                with st.expander("📋 Policy Context from conversation", expanded=False):
                     for k, v in context.items():
-                        st.markdown(f"**{k.replace('_',' ').title()}:** {v}")
+                        is_default = str(v).startswith("[Default]")
+                        icon = "⚙️" if is_default else "✅"
+                        label = k.replace("_"," ").title()
+                        st.markdown(f"{icon} **{label}:** {v}"
+                                    + (" *(enterprise default — not discussed)*" if is_default else ""))
 
             with st.expander(f"⚖️ {len(principles)} Guiding Principles generated", expanded=True):
                 c1, c2 = st.columns(2)
@@ -993,12 +1311,25 @@ with tab_a5:
                 try:
                     from openai import OpenAI as _OAI
                     _client = _OAI(api_key=api_key)
-                    _resp   = _client.chat.completions.create(
-                        model="gpt-4o-mini", max_tokens=10,
-                        messages=[{"role":"user","content":"Reply: READY"}]
-                    )
+                    # Try models in order until one works
+                    _model_used = None
+                    for _m in ["gpt-4o-mini", "gpt-3.5-turbo", "gpt-3.5-turbo-0125"]:
+                        try:
+                            _resp = _client.chat.completions.create(
+                                model=_m, max_tokens=10,
+                                messages=[{"role":"user","content":"Reply: READY"}]
+                            )
+                            _model_used = _m
+                            st.session_state["_openai_model"] = _m
+                            break
+                        except Exception as _me:
+                            if "not found" in str(_me).lower() or "404" in str(_me):
+                                continue
+                            raise _me
+                    if not _model_used:
+                        raise Exception("No supported model found on this OpenAI account")
                     _reply = _resp.choices[0].message.content.strip()
-                    _log("✅", f"**OpenAI API connected** — responded: **{_reply}**")
+                    _log("✅", f"**OpenAI API connected** — model: `{_model_used}` · response: **{_reply}**")
                     st.session_state.a5_preflight_done = True
                 except Exception as _ex:
                     _log("❌", f"**OpenAI API FAILED** — `{str(_ex)}`\n\nCheck: platform.openai.com/usage")
@@ -1023,6 +1354,8 @@ with tab_a5:
                 new_os = agent5.analyse_os(st.session_state.os_df, principles, costs, context, os5_cb)
                 st.session_state.os_df    = new_os
                 st.session_state.a5_os_done = True
+                # Persist Final Recommendations to SQLite
+                save_os_df(new_os)
 
                 if "Analysis Source" in new_os.columns:
                     ai_c = (new_os["Analysis Source"] == "OpenAI").sum()
@@ -1049,6 +1382,8 @@ with tab_a5:
                 new_db = agent5.analyse_db(st.session_state.db_df, principles, costs, context, db5_cb)
                 st.session_state.db_df    = new_db
                 st.session_state.a5_db_done = True
+                # Persist Final Recommendations to SQLite
+                save_db_df(new_db)
 
                 if "Analysis Source" in new_db.columns:
                     ai_c = (new_db["Analysis Source"] == "OpenAI").sum()
@@ -1393,10 +1728,10 @@ with tab_a5:
                 st.rerun()
 
 
-# ── Download Excel ─────────────────────────────────────────────────────────────
+# ── Downloads ──────────────────────────────────────────────────────────────────
 st.divider()
-_, dl_col, _ = st.columns([1, 2, 1])
-with dl_col:
+dl_col1, dl_col2 = st.columns(2)
+with dl_col1:
     ts_str = datetime.now().strftime("%d %b %Y %H:%M UTC")
     excel_bytes = export_to_excel(
         st.session_state.os_df,
@@ -1409,12 +1744,30 @@ with dl_col:
     fname = f"INFY_Version_Tracker_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
     os_n, db_n = len(st.session_state.os_df), len(st.session_state.db_df)
     st.download_button(
-        label=f"📥 Download Excel — OS: {os_n} entries · DB: {db_n} entries",
+        label=f"📥 Download Excel — OS: {os_n} · DB: {db_n} entries",
         data=excel_bytes, file_name=fname,
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         width="stretch", type="primary"
     )
-    st.caption(f"📁 {fname} · Generated at {ts_str}")
+    st.caption(f"📁 {fname}")
+
+with dl_col2:
+    try:
+        pdf_bytes = generate_pdf_report(
+            st.session_state.os_df,
+            st.session_state.db_df,
+            principles=st.session_state.get("a5_principles", []),
+        )
+        pdf_fname = f"INFY_Executive_Report_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
+        st.download_button(
+            label=f"📄 Download PDF Executive Report",
+            data=pdf_bytes, file_name=pdf_fname,
+            mime="application/pdf",
+            width="stretch"
+        )
+        st.caption(f"📄 {pdf_fname}")
+    except Exception:
+        st.caption("PDF export requires fpdf2: `pip install fpdf2`")
 
 st.markdown(
     "<p style='text-align:center;color:#94A3B8;font-size:0.72rem;margin-top:1.5rem;'>"

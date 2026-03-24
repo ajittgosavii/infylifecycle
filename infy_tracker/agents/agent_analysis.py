@@ -12,7 +12,7 @@ from datetime import date, datetime
 
 PROJECT_END = date(2028, 6, 30)
 TODAY       = date.today()
-DB_PATH     = os.path.join(os.path.dirname(__file__), "..", "agent5_conversations.db")
+DB_PATH     = "/tmp/agent5_conversations.db"   # /tmp is writable on Streamlit Cloud
 
 VERDICTS = ["CRITICAL", "UPGRADE NOW", "EXTEND + PLAN", "REPLACE", "CLOUD MIGRATE", "MONITOR"]
 
@@ -20,36 +20,79 @@ CONVERSATION_SYSTEM = f"""You are Agent 5 — a senior IT migration strategist a
 Help an enterprise architect define their OS and database migration policy
 for a project running from 1 April 2026 to 30 June 2028.
 
-Have a NATURAL CONVERSATION. Ask ONE focused question at a time.
-For cost/pricing questions, use your training knowledge and give best estimates with caveats.
+YOUR APPROACH — BE ADAPTIVE:
+- Some users will answer all questions in detail. Others will give a brief context statement
+  and want to proceed quickly. BOTH are valid. Adapt to the user's pace.
+- If the user gives a rich context upfront (e.g. "We are a large bank with PCI DSS scope,
+  zero EOL tolerance, Azure preferred, small migration team"), extract as much as you can
+  from that single message and ask only about the gaps.
+- If the user says "just proceed" or "that's enough" or "go ahead" — respect that and signal ready.
+- For any topics NOT discussed, apply sensible enterprise defaults in the context JSON.
 
-Cover these topics across the conversation:
-1. EOL risk tolerance
-2. Support runway needed at project end (Jun 2028)
-3. Budget — ESU approved? Cloud budget?
-4. Compliance — PCI DSS / HIPAA / SOX / GDPR
-5. Windows EOL path
-6. Linux/Unix/AIX path
-7. Database EOL path
-8. Oracle licensing stance
-9. Cloud provider preference
-10. Legacy DB stance (Informix, SAP ASE, Progress, Ingres)
-11. Migration capacity
-12. System criticality tiers
-13. Rollback policy
+TOPICS TO COVER (ask only what you still need):
+1.  eol_tolerance  — Risk tolerance for EOL software (default if not asked: "Low — ESU with controls")
+2.  min_runway     — Support runway at Jun 2028 (default: "12 months past project end")
+3.  esu_budget     — ESU budget (default: "Limited — Tier-1 only")
+4.  compliance     — Regulatory scope (default: "Internal policy only")
+5.  windows_path   — Windows EOL path (default: "In-place upgrade to latest supported version")
+6.  linux_path     — Linux/Unix/AIX path (default: "In-place upgrade same distro")
+7.  db_eol_path    — Database EOL path (default: "In-place upgrade same vendor")
+8.  oracle_stance  — Oracle licensing (default: "Evaluate case by case")
+9.  cloud_provider — Cloud provider (default: "No strong preference")
+10. legacy_db      — Legacy DBs stance (default: "Retain if stable, migrate if EOL in window")
+11. capacity       — Migration capacity (default: "Medium — 20-30 systems in project window")
+12. criticality    — System priority (default: "EOL-risk first, then compliance scope")
+13. rollback       — Rollback policy (default: "Parallel run for Tier-1, in-place for others")
 
-After 10-15 exchanges with sufficient context, respond with ONLY this JSON:
-{{"ready": true, "summary": "2-3 sentence summary", "context": {{"key": "value"}}}}
+SIGNAL READY when:
+- You have explicit or inferred answers for most topics, OR
+- The user has indicated they want to proceed, OR
+- You have had at least 4 exchanges and covered the most critical topics
+  (eol_tolerance, compliance, windows_path, db_eol_path)
+
+When ready, respond with ONLY this JSON:
+{{"ready": true,
+  "summary": "2-3 sentence org-specific policy summary based on what was discussed",
+  "context": {{
+    "eol_tolerance": "...", "min_runway": "...", "esu_budget": "...",
+    "compliance": "...", "windows_path": "...", "linux_path": "...",
+    "db_eol_path": "...", "oracle_stance": "...", "cloud_provider": "...",
+    "legacy_db": "...", "capacity": "...", "criticality": "...", "rollback": "..."
+  }},
+  "inferred_topics": ["list of topics that used defaults, not explicitly discussed"]
+}}
 Today: {TODAY}. Project ends 30 Jun 2028."""
 
-PRINCIPLES_SYSTEM = """Generate 8-10 Guiding Principles (GP-01...GP-10) from a policy conversation.
-Return ONLY a JSON array:
-[{{"code":"GP-01","title":"Short title","rule":"One rule.","trigger":"If X then Y","category":"Risk|Budget|OS|Database|Execution"}}]"""
+PRINCIPLES_SYSTEM = """You are a senior IT migration strategist.
+Generate 8-10 Guiding Principles from a SPECIFIC policy conversation.
 
-FINAL_REC_SYSTEM = f"""Cross-reference Agent 2 technical recommendations with org policy to produce
-Final Recommendations. Project: 1 Apr 2026 to 30 Jun 2028. Today: {TODAY}.
-Start each with: CRITICAL / UPGRADE NOW / EXTEND + PLAN / REPLACE / CLOUD MIGRATE / MONITOR
-Return ONLY JSON: {{"KEY": "VERDICT — recommendation. (GP-N)"}}"""
+CRITICAL: Each principle must be ORG-SPECIFIC — use actual details from the conversation
+(specific thresholds, budgets, compliance frameworks, named products, team sizes mentioned).
+Generic principles like "Understand risk tolerance" are NOT acceptable.
+
+Good example: GP-01: "PCI DSS Zero-EOL — All payment system OS/DB versions must be on
+supported releases by 30 Jun 2028. No ESU permitted for Tier-1 PCI scope systems."
+Bad example: GP-01: "Risk Tolerance — Understand organization's risk tolerance."
+
+Return ONLY a JSON array:
+[{"code":"GP-01","title":"4-word specific title","rule":"One specific actionable rule with named systems/dates/thresholds.",
+  "trigger":"If [specific condition] → [specific action]","category":"Risk|Budget|OS|Database|Execution"}]"""
+
+FINAL_REC_SYSTEM = f"""You are a senior IT migration strategist at Infosys.
+Cross-reference:
+1. Agent 2's expert technical recommendation
+2. Organisation's specific policy context from the conversation
+3. Agreed Guiding Principles (cite by code)
+
+Project: 1 Apr 2026 → 30 Jun 2028. Today: {TODAY}.
+
+For each record, produce a FINAL RECOMMENDATION that:
+- Starts with: CRITICAL / UPGRADE NOW / EXTEND + PLAN / REPLACE / CLOUD MIGRATE / MONITOR
+- Synthesises Agent 2's technical advice with the ORG'S SPECIFIC POLICY (not generic advice)
+- Cites a GP code e.g. (GP-01)
+- Is 2-3 sentences, specific to this record
+
+Return ONLY valid JSON: {{"KEY": "VERDICT — org-specific recommendation. (GP-N)"}}"""
 
 
 # ── SQLite helpers ─────────────────────────────────────────────────────────────
@@ -108,11 +151,36 @@ def _delete_session(session_id):
     conn.commit(); conn.close()
 
 
+
+MODEL_PREFERENCE = ["gpt-4o-mini", "gpt-3.5-turbo", "gpt-3.5-turbo-0125"]
+
+def _resolve_model(client):
+    """Try models in order, return first that works. Cache in session_state."""
+    import streamlit as st
+    cached = st.session_state.get("_openai_model")
+    if cached:
+        return cached
+    for model in MODEL_PREFERENCE:
+        try:
+            client.chat.completions.create(
+                model=model, max_tokens=5,
+                messages=[{"role": "user", "content": "ping"}]
+            )
+            st.session_state["_openai_model"] = model
+            return model
+        except Exception as e:
+            err = str(e).lower()
+            if "not found" in err or "404" in err or "model" in err:
+                continue
+            st.session_state["_openai_model"] = model
+            return model
+    return MODEL_PREFERENCE[0]
+
 class PolicyAnalysisAgent:
 
     def __init__(self, api_key: str):
         self.client = OpenAI(api_key=api_key)
-        self.model  = "gpt-4o-mini"   # ONLY model used — chat.completions throughout
+        self.model  = _resolve_model(self.client)
 
     @staticmethod
     def get_or_create_session():
@@ -158,16 +226,50 @@ class PolicyAnalysisAgent:
         )
         return response.choices[0].message.content.strip()
 
-    def is_conversation_complete(self, reply: str) -> tuple:
+    def is_conversation_complete(self, reply: str, message_count: int = 0) -> tuple:
+        """
+        Accept ready signal adaptively:
+        - Minimum 4 exchanges (8 messages) OR user explicitly said to proceed
+        - Agent fills defaults for any uncovered topics — nothing is blocked
+        Returns (done, context, summary, inferred_topics)
+        """
         try:
             s, e = reply.find("{"), reply.rfind("}")
             if s != -1 and e > s:
                 data = json.loads(reply[s:e+1])
                 if data.get("ready"):
-                    return True, data.get("context", {}), data.get("summary", "")
+                    context         = data.get("context", {})
+                    inferred        = data.get("inferred_topics", [])
+                    summary         = data.get("summary", "")
+                    # Only guard: need at least 4 exchanges (8 messages)
+                    # so the agent has had a chance to ask something
+                    if message_count < 8:
+                        return False, {}, "", []
+                    # Fill any completely missing keys with defaults
+                    DEFAULTS = {
+                        "eol_tolerance":  "Low — ESU with compensating controls",
+                        "min_runway":     "12 months past Jun 2028",
+                        "esu_budget":     "Limited — Tier-1 critical systems only",
+                        "compliance":     "Internal policy only",
+                        "windows_path":   "In-place upgrade to latest supported version",
+                        "linux_path":     "In-place upgrade same distro",
+                        "db_eol_path":    "In-place upgrade same vendor",
+                        "oracle_stance":  "Evaluate Oracle vs alternatives case by case",
+                        "cloud_provider": "No strong cloud preference",
+                        "legacy_db":      "Retain if stable, migrate if EOL within project",
+                        "capacity":       "Medium — 20-30 systems across project lifespan",
+                        "criticality":    "EOL-risk first, then compliance scope",
+                        "rollback":       "Parallel run for Tier-1, in-place for others",
+                    }
+                    for k, default in DEFAULTS.items():
+                        if not context.get(k, "").strip():
+                            context[k] = f"[Default] {default}"
+                            if k not in inferred:
+                                inferred.append(k)
+                    return True, context, summary, inferred
         except Exception:
             pass
-        return False, {}, ""
+        return False, {}, "", []
 
     def generate_principles(self, context: dict, session_id: str) -> list:
         messages = _load_messages(session_id)
