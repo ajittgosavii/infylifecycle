@@ -194,10 +194,12 @@ def badge(status: str) -> str:
 
 # ── Sidebar ────────────────────────────────────────────────────────────────────
 with st.sidebar:
-    try:
-        st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/9/90/Infosys_logo.svg/1200px-Infosys_logo.svg.png", width=130)
-    except Exception:
-        st.markdown("### INFY")
+    _logo_path = os.path.join(_HERE, "logo.svg")
+    if os.path.exists(_logo_path):
+        with open(_logo_path, "r") as _lf:
+            st.markdown(_lf.read(), unsafe_allow_html=True)
+    else:
+        st.markdown("### INFY Lifecycle Tracker")
     st.divider()
 
     st.subheader("🔑 OpenAI API Key")
