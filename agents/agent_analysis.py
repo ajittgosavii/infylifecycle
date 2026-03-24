@@ -21,35 +21,68 @@ Help an enterprise architect define their OS and database migration policy
 for a project running from 1 April 2026 to 30 June 2028.
 
 Have a NATURAL CONVERSATION. Ask ONE focused question at a time.
-For cost/pricing questions, use your training knowledge and give best estimates with caveats.
+Build on previous answers — reference what the user told you earlier.
 
-Cover these topics across the conversation:
-1. EOL risk tolerance
-2. Support runway needed at project end (Jun 2028)
-3. Budget — ESU approved? Cloud budget?
-4. Compliance — PCI DSS / HIPAA / SOX / GDPR
-5. Windows EOL path
-6. Linux/Unix/AIX path
-7. Database EOL path
-8. Oracle licensing stance
-9. Cloud provider preference
-10. Legacy DB stance (Informix, SAP ASE, Progress, Ingres)
-11. Migration capacity
-12. System criticality tiers
-13. Rollback policy
+MANDATORY TOPICS — you MUST get a clear answer on ALL of these before signalling ready:
+1.  eol_tolerance  — Risk tolerance for EOL software (zero / compensating controls / ESU / CVE-based)
+2.  min_runway     — Minimum support runway needed at project end Jun 2028
+3.  esu_budget     — Is ESU / extended support budget approved? For which tiers?
+4.  compliance     — Regulatory scope: PCI DSS / HIPAA / SOX / GDPR / internal only
+5.  windows_path   — What to do when Windows Client/Server reaches EOL
+6.  linux_path     — What to do when Linux/Unix/AIX/Solaris reaches EOL
+7.  db_eol_path    — Preferred path when a database reaches EOL (upgrade / OSS / cloud)
+8.  oracle_stance  — Oracle licensing: reducing spend, strategic, evaluate case-by-case
+9.  cloud_provider — Preferred cloud provider if migrating: Azure / AWS / GCP / on-prem
+10. legacy_db      — Stance on legacy DBs (IBM Informix, SAP ASE, Progress OpenEdge, Ingres)
+11. capacity       — Migration team size / how many systems can be migrated in the window
+12. criticality    — How are systems prioritised: compliance-first, revenue-first, EOL-first
+13. rollback       — Rollback/fallback policy during migrations
 
-After 10-15 exchanges with sufficient context, respond with ONLY this JSON:
-{{"ready": true, "summary": "2-3 sentence summary", "context": {{"key": "value"}}}}
+RULES:
+- Ask ONE question at a time, building naturally on previous answers
+- If the user's answer is about a specific product (e.g. Windows Server 2016), acknowledge it
+  AND continue asking about the remaining mandatory topics
+- Do NOT signal ready after just 1-2 exchanges — you need answers to ALL 13 topics above
+- Only signal ready when you have EXPLICIT answers to at least 10 of the 13 mandatory topics
+- When ready, respond with ONLY this JSON (nothing else before or after):
+  {{"ready": true, "summary": "2-3 sentence org-specific policy summary", "context": {{
+    "eol_tolerance": "...", "min_runway": "...", "esu_budget": "...",
+    "compliance": "...", "windows_path": "...", "linux_path": "...",
+    "db_eol_path": "...", "oracle_stance": "...", "cloud_provider": "...",
+    "legacy_db": "...", "capacity": "...", "criticality": "...", "rollback": "..."
+  }}}}
 Today: {TODAY}. Project ends 30 Jun 2028."""
 
-PRINCIPLES_SYSTEM = """Generate 8-10 Guiding Principles (GP-01...GP-10) from a policy conversation.
-Return ONLY a JSON array:
-[{{"code":"GP-01","title":"Short title","rule":"One rule.","trigger":"If X then Y","category":"Risk|Budget|OS|Database|Execution"}}]"""
+PRINCIPLES_SYSTEM = """You are a senior IT migration strategist.
+Generate 8-10 Guiding Principles from a SPECIFIC policy conversation.
 
-FINAL_REC_SYSTEM = f"""Cross-reference Agent 2 technical recommendations with org policy to produce
-Final Recommendations. Project: 1 Apr 2026 to 30 Jun 2028. Today: {TODAY}.
-Start each with: CRITICAL / UPGRADE NOW / EXTEND + PLAN / REPLACE / CLOUD MIGRATE / MONITOR
-Return ONLY JSON: {{"KEY": "VERDICT — recommendation. (GP-N)"}}"""
+CRITICAL: Each principle must be ORG-SPECIFIC — use actual details from the conversation
+(specific thresholds, budgets, compliance frameworks, named products, team sizes mentioned).
+Generic principles like "Understand risk tolerance" are NOT acceptable.
+
+Good example: GP-01: "PCI DSS Zero-EOL — All payment system OS/DB versions must be on
+supported releases by 30 Jun 2028. No ESU permitted for Tier-1 PCI scope systems."
+Bad example: GP-01: "Risk Tolerance — Understand organization's risk tolerance."
+
+Return ONLY a JSON array:
+[{"code":"GP-01","title":"4-word specific title","rule":"One specific actionable rule with named systems/dates/thresholds.",
+  "trigger":"If [specific condition] → [specific action]","category":"Risk|Budget|OS|Database|Execution"}]"""
+
+FINAL_REC_SYSTEM = f"""You are a senior IT migration strategist at Infosys.
+Cross-reference:
+1. Agent 2's expert technical recommendation
+2. Organisation's specific policy context from the conversation
+3. Agreed Guiding Principles (cite by code)
+
+Project: 1 Apr 2026 → 30 Jun 2028. Today: {TODAY}.
+
+For each record, produce a FINAL RECOMMENDATION that:
+- Starts with: CRITICAL / UPGRADE NOW / EXTEND + PLAN / REPLACE / CLOUD MIGRATE / MONITOR
+- Synthesises Agent 2's technical advice with the ORG'S SPECIFIC POLICY (not generic advice)
+- Cites a GP code e.g. (GP-01)
+- Is 2-3 sentences, specific to this record
+
+Return ONLY valid JSON: {{"KEY": "VERDICT — org-specific recommendation. (GP-N)"}}"""
 
 
 # ── SQLite helpers ─────────────────────────────────────────────────────────────
@@ -183,13 +216,31 @@ class PolicyAnalysisAgent:
         )
         return response.choices[0].message.content.strip()
 
-    def is_conversation_complete(self, reply: str) -> tuple:
+    def is_conversation_complete(self, reply: str, message_count: int = 0) -> tuple:
+        """
+        Only accept ready signal if:
+        1. At least 16 messages exchanged (8 user + 8 agent turns)
+        2. JSON context has at least 8 of the 13 mandatory keys populated
+        3. reply contains valid JSON with ready:true
+        """
+        REQUIRED_KEYS = ["eol_tolerance","min_runway","esu_budget","compliance",
+                         "windows_path","linux_path","db_eol_path","oracle_stance",
+                         "cloud_provider","legacy_db","capacity","criticality","rollback"]
         try:
             s, e = reply.find("{"), reply.rfind("}")
             if s != -1 and e > s:
                 data = json.loads(reply[s:e+1])
                 if data.get("ready"):
-                    return True, data.get("context", {}), data.get("summary", "")
+                    # Guard 1: minimum conversation length
+                    if message_count < 16:
+                        return False, {}, ""
+                    # Guard 2: context must have at least 8 keys populated
+                    context = data.get("context", {})
+                    populated = sum(1 for k in REQUIRED_KEYS
+                                    if context.get(k, "").strip() not in ("", "unknown", "not discussed"))
+                    if populated < 8:
+                        return False, {}, ""
+                    return True, context, data.get("summary", "")
         except Exception:
             pass
         return False, {}, ""
