@@ -5,7 +5,7 @@ Saves on Agent 1/2/5 completion. Loads on every app start — no data lost on re
 import sqlite3, json, os, pandas as pd
 from datetime import datetime
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "..", "lifecycle_data.db")
+DB_PATH = "/tmp/lifecycle_data.db"   # /tmp is writable on Streamlit Cloud
 
 
 def _conn():
