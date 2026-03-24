@@ -92,7 +92,7 @@ class PolicyAnalysisAgent:
     @staticmethod
     def reset():
         for k in ["a5_status", "a5_answers", "a5_principles",
-                  "a5_costs", "a5_os_done", "a5_db_done"]:
+                  "a5_costs", "a5_os_done", "a5_db_done", "a5_preflight_done"]:
             st.session_state.pop(k, None)
         PolicyAnalysisAgent.init_session()
 
@@ -243,7 +243,7 @@ class PolicyAnalysisAgent:
                 try:
                     import time
                     if attempt > 0:
-                        time.sleep(2)
+                        time.sleep(3)
                     resp = self.client.messages.create(
                         model=self.model,
                         max_tokens=4000,
@@ -262,6 +262,10 @@ class PolicyAnalysisAgent:
                 except Exception as ex:
                     last_error = str(ex)
                     continue
+
+            # Brief pause between batches so progress is visible
+            import time as _t
+            _t.sleep(0.5)
 
             if not api_worked and progress_cb:
                 progress_cb(i / total,

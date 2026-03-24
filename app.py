@@ -300,6 +300,27 @@ if run_a1:
 # ── Run Agent 2 ────────────────────────────────────────────────────────────────
 if run_a2:
     st.session_state.a2_status = "running"
+
+    # Pre-flight API test
+    import anthropic as _anthro2
+    try:
+        _c2 = _anthro2.Anthropic(api_key=api_key)
+        _r2 = _c2.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=20,
+            messages=[{"role": "user", "content": "Reply: READY"}]
+        )
+        _reply2 = _r2.content[0].text.strip()
+        st.success(f"✅ Claude Haiku API connected — response: **{_reply2}**")
+    except Exception as _ex2:
+        st.error(
+            f"❌ **Claude API pre-flight FAILED** — cannot generate recommendations.\n\n"
+            f"**Error:** `{str(_ex2)}`\n\n"
+            f"Check your API key and quota at console.anthropic.com"
+        )
+        st.session_state.a2_status = "error"
+        st.stop()
+
     agent2 = RecommendationAgent(api_key=api_key)
 
     os_prog = st.progress(0, text="Agent 2: generating OS recommendations...")
@@ -678,22 +699,68 @@ with tab_a5:
 
         elif a5s == "analysing":
             st.subheader("🧠 Running Policy Analysis...")
+
+            # ── Pre-flight API test ───────────────────────────────────────────
+            # Fires a real Claude API call BEFORE analysis so any auth/quota
+            # error is shown on screen — not silently swallowed.
+            if not st.session_state.get("a5_preflight_done"):
+                st.info("🔌 Testing Claude API connection before analysis...")
+                import anthropic as _anthro
+                preflight_ok    = False
+                preflight_error = ""
+                try:
+                    _client = _anthro.Anthropic(api_key=api_key)
+                    _resp   = _client.messages.create(
+                        model="claude-sonnet-4-6",
+                        max_tokens=30,
+                        messages=[{"role": "user",
+                                   "content": "Reply with only the word: READY"}]
+                    )
+                    _reply = _resp.content[0].text.strip()
+                    preflight_ok = "READY" in _reply.upper()
+                    if preflight_ok:
+                        st.success(f"✅ Claude API connected — model responded: **{_reply}**")
+                    else:
+                        st.warning(f"⚠️ Claude API responded but unexpectedly: **{_reply}**")
+                        preflight_ok = True  # still usable
+                except Exception as _ex:
+                    preflight_error = str(_ex)
+                    st.error(
+                        f"❌ **Claude API pre-flight FAILED** — analysis will use rule-based only.\n\n"
+                        f"**Error:** `{preflight_error}`\n\n"
+                        f"Check: API key valid? Quota available? Model `claude-sonnet-4-6` accessible?"
+                    )
+                    st.stop()   # halt — don't run analysis if API is broken
+
+                st.session_state.a5_preflight_done = True
+
+            # ── Run analysis ──────────────────────────────────────────────────
             agent5     = PolicyAnalysisAgent(api_key=api_key)
             principles = st.session_state.a5_principles
             costs      = st.session_state.a5_costs
+
             if not st.session_state.get("a5_os_done"):
-                p5 = st.progress(0, text="Analysing OS entries...")
+                p5 = st.progress(0, text="🧠 Claude AI analysing OS entries...")
                 s5 = st.empty()
-                def os5_cb(pct, msg): p5.progress(min(pct,1.0), text=msg); s5.caption(msg)
-                st.session_state.os_df = agent5.analyse_os(st.session_state.os_df, principles, costs, os5_cb)
+                def os5_cb(pct, msg):
+                    p5.progress(min(pct, 1.0), text=msg)
+                    s5.info(f"⏳ {msg}")
+                st.session_state.os_df    = agent5.analyse_os(
+                    st.session_state.os_df, principles, costs, os5_cb)
                 st.session_state.a5_os_done = True
+
             if not st.session_state.get("a5_db_done"):
-                p5b = st.progress(0, text="Analysing DB entries...")
+                p5b = st.progress(0, text="🧠 Claude AI analysing DB entries...")
                 s5b = st.empty()
-                def db5_cb(pct, msg): p5b.progress(min(pct,1.0), text=msg); s5b.caption(msg)
-                st.session_state.db_df = agent5.analyse_db(st.session_state.db_df, principles, costs, db5_cb)
+                def db5_cb(pct, msg):
+                    p5b.progress(min(pct, 1.0), text=msg)
+                    s5b.info(f"⏳ {msg}")
+                st.session_state.db_df    = agent5.analyse_db(
+                    st.session_state.db_df, principles, costs, db5_cb)
                 st.session_state.a5_db_done = True
-            st.session_state.a5_status = "done"
+
+            st.session_state.a5_status      = "done"
+            st.session_state.a5_preflight_done = False  # reset for next run
             st.rerun()
 
         elif a5s == "done":
