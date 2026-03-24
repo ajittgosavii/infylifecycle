@@ -2,8 +2,8 @@
 Agent 5: Conversational Policy Analysis Agent
 ==============================================
 - SQLite persists full conversation across reruns/refreshes
-- Uses gpt-4o-mini for conversation, gpt-4o-search-preview for real-time
-  web searches (costs, ESU pricing, migration guides, EOL dates)
+- Uses gpt-4o-mini (chat.completions) for all interactions
+  Cost/pricing questions answered from training knowledge with clear caveats
 - Generates Guiding Principles from conversation
 - Final Recommendations cross-reference Agent 2 + policy context
 
@@ -174,8 +174,7 @@ class PolicyAnalysisAgent:
 
     def __init__(self, api_key: str):
         self.client = OpenAI(api_key=api_key)
-        self.model       = "gpt-4o-mini"          # Conversation model
-        self.search_model = "gpt-4o"  # Web search model (real-time, with web_search_preview tool)
+        self.model = "gpt-4o-mini"   # Chat completions — no Responses API needed
 
     @staticmethod
     def get_or_create_session() -> str:
@@ -213,57 +212,22 @@ class PolicyAnalysisAgent:
 
     # ── Chat with real-time web search ────────────────────────────────────────
     def chat(self, messages: list) -> str:
-        """
-        Uses Responses API with web_search_preview tool.
-        Agent can search the web on EVERY turn for live pricing,
-        ESU costs, migration guides, EOL dates etc.
-        """
-        # Build input from message history
-        if not messages:
-            input_text = "Please start the policy conversation with your opening question."
-        else:
-            # Format as a conversation string for the Responses API
-            conv = "\n\n".join(
-                f"{'ARCHITECT' if m['role']=='user' else 'AGENT 5'}: {m['content']}"
-                for m in messages[-20:]  # last 20 messages for context
-            )
-            input_text = (
-                f"CONVERSATION SO FAR:\n{conv}\n\n"
-                f"Continue the conversation as Agent 5. "
-                f"Search the web if the user asks about costs, pricing, ESU rates, "
-                f"migration guides, or any real-time information."
-            )
+        """Send conversation to gpt-4o-mini and get next response."""
 
-        # Detect if input asks for real-time data (costs, prices, ESU)
-        needs_search = any(kw in input_text.lower() for kw in [
-            "cost", "price", "pricing", "esu", "extended support update",
-            "how much", "subscription", "licensing", "$", "per year",
-            "migration guide", "upgrade guide", "best practice"
-        ])
+        # Use chat.completions for all conversation turns
+        # gpt-4o-mini handles cost/pricing questions from training knowledge
+        msgs = [{"role": "system", "content": CONVERSATION_SYSTEM}]
+        if messages:
+            msgs += messages[-20:]   # last 20 for context
+        elif input_text:
+            msgs.append({"role": "user", "content": input_text})
 
-        if needs_search:
-            # Use chat completions with search-optimized prompt
-            search_prompt = (
-                f"{CONVERSATION_SYSTEM}\n\n"
-                f"The user is asking about costs, pricing, or real-time data. "
-                f"Provide the most accurate and up-to-date information you have."
-            )
-            response = self.client.chat.completions.create(
-                model=self.model,
-                max_tokens=800,
-                messages=[{"role": "system", "content": search_prompt}] +
-                          ([{"role": "user", "content": input_text}] if input_text else [])
-            )
-            return response.choices[0].message.content.strip()
-        else:
-            # Use chat completions for normal conversation (faster, cheaper)
-            response = self.client.chat.completions.create(
-                model=self.model,
-                max_tokens=600,
-                messages=[{"role": "system", "content": CONVERSATION_SYSTEM}] +
-                          ([{"role": "user", "content": input_text}] if input_text else [])
-            )
-            return response.choices[0].message.content.strip()
+        response = self.client.chat.completions.create(
+            model=self.model,
+            max_tokens=700,
+            messages=msgs
+        )
+        return response.choices[0].message.content.strip()
 
     def is_conversation_complete(self, reply: str) -> tuple:
         try:
@@ -339,17 +303,14 @@ class PolicyAnalysisAgent:
                 resp = self.client.chat.completions.create(
                     model=self.model,
                     max_tokens=300,
-                    messages=[
-                        {"role": "system", "content": "You are a pricing research assistant. Provide specific current prices and figures."},
-                        {"role": "user", "content": (
-                            f"Search for: {query}\n\n"
-                            f"Return a 2-3 sentence summary with SPECIFIC current prices and figures. "
-                            f"Include the source URL if available."
-                        )}
-                    ]
+                    messages=[{"role": "user", "content": (
+                        f"Based on your training knowledge, provide a 2-3 sentence cost summary "
+                        f"with specific figures for: {query}\n"
+                        f"Note if figures are approximate or may have changed since your training."
+                    )}]
                 )
-                result = (resp.choices[0].message.content or "").strip()
-                costs[vendor] = result if result else "Could not retrieve live pricing."
+                result = resp.choices[0].message.content.strip()
+                costs[vendor] = result if result else "Cost data not available."
             except Exception as ex:
                 fallbacks = {
                     "Windows Server 2016/2019 ESU":
