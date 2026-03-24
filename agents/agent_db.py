@@ -69,7 +69,7 @@ Expected format:
 class RecommendationAgent:
     def __init__(self, api_key: str):
         self.client     = anthropic.Anthropic(api_key=api_key)
-        self.model      = "claude-opus-4-20250514"
+        self.model      = "claude-sonnet-4-6"
         self.batch_size = 20
 
     # ── OS recommendations ────────────────────────────────────────────────────

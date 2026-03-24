@@ -466,16 +466,18 @@ Output ONLY the JSON array starting with [ and ending with ]."""
 
 class OSDataAgent:
     def __init__(self, api_key: str):
-        self.client = anthropic.Anthropic(api_key=api_key)
-        self.model  = "claude-opus-4-20250514"
-        self.today  = datetime.now().strftime("%d %B %Y")
+        self.client     = anthropic.Anthropic(api_key=api_key)
+        self.model      = "claude-sonnet-4-6"
+        self.today      = datetime.now().strftime("%d %B %Y")
+        self.last_error = None   # captures most recent fetch error for diagnosis
 
     # ── Fetch ALL OS data from web ────────────────────────────────────────────
     def fetch_all_os_data(self, progress_callback=None) -> pd.DataFrame:
         import time
-        all_rows  = []
-        skipped   = []
-        total     = len(OS_SEARCH_TARGETS)
+        all_rows   = []
+        skipped    = []
+        errors     = []
+        total      = len(OS_SEARCH_TARGETS)
 
         for idx, target in enumerate(OS_SEARCH_TARGETS):
             if progress_callback:
@@ -484,14 +486,14 @@ class OSDataAgent:
                     f"🔍 Fetching OS: {target['family']}  ({idx+1}/{total})"
                 )
 
-            # Short pause — knowledge fallback is instant so no long delays needed
+            # Short pause between calls
             if idx > 0:
                 time.sleep(0.5)
 
+            self.last_error = None
             rows = self._fetch_family(target, kind="OS")
 
             if rows:
-                # Note if this came from knowledge fallback (no web search marker)
                 all_rows.extend(rows)
                 if progress_callback:
                     progress_callback(
@@ -499,21 +501,27 @@ class OSDataAgent:
                         f"✅ {target['family']}: {len(rows)} versions  |  total: {len(all_rows)}"
                     )
             else:
+                err_detail = self.last_error or "unknown"
                 skipped.append(target["family"])
+                errors.append(f"{target['family']}: {err_detail[:80]}")
                 if progress_callback:
                     progress_callback(
                         (idx + 1) / total,
-                        f"⚠️ {target['family']}: no data (web + knowledge both failed)"
+                        f"⚠️ {target['family']}: failed — {err_detail[:60]}"
                     )
 
         if progress_callback:
             if skipped:
+                # Show first error so user can diagnose
+                first_err = errors[0] if errors else "unknown"
                 progress_callback(1.0,
-                    f"OS fetch done — {len(all_rows)} rows from {total - len(skipped)}/{total} families. "
-                    f"Skipped: {', '.join(skipped[:3])}"
+                    f"OS fetch done — {len(all_rows)} rows from {total-len(skipped)}/{total} families. "
+                    f"First error: {first_err}"
                 )
             else:
-                progress_callback(1.0, f"✅ OS fetch complete — {len(all_rows)} versions across all {total} families")
+                progress_callback(1.0,
+                    f"✅ OS fetch complete — {len(all_rows)} versions across all {total} families"
+                )
 
         if not all_rows:
             return pd.DataFrame(columns=OS_COLUMNS)
@@ -626,6 +634,7 @@ class OSDataAgent:
             )
 
         # ── Step 1: Live web_search — single attempt ──────────────────────────
+        web_err = None
         try:
             response = self.client.messages.create(
                 model=self.model,
@@ -641,9 +650,11 @@ class OSDataAgent:
                 return rows   # ✅ Live internet data obtained
             # Response came back but JSON was empty — fall through to knowledge
         except Exception as e:
-            err_str = str(e).lower()
+            web_err = str(e)
+            err_str = web_err.lower()
             # Hard auth failure — knowledge won't help either
             if "401" in err_str or "authentication" in err_str:
+                self.last_error = f"Auth failure: {web_err}"
                 return []
             # For 429 rate limit only — brief pause before knowledge call
             if "429" in err_str or "rate" in err_str:
@@ -653,6 +664,7 @@ class OSDataAgent:
         # ── Step 2: Claude training knowledge — guaranteed data ───────────────
         # A dedicated prompt that does NOT say "search the internet" so Claude
         # answers confidently from its training data without needing any tool.
+        kb_err = None
         try:
             response = self.client.messages.create(
                 model=self.model,
@@ -665,9 +677,16 @@ class OSDataAgent:
             rows = self._parse_json_array(text)
             if rows:
                 return rows   # ✅ Knowledge data obtained
-        except Exception:
-            pass
+            # Got response but couldn't parse JSON
+            kb_err = f"Empty parse. Response preview: {text[:200]}"
+        except Exception as e:
+            kb_err = str(e)
 
+        # Both failed — log for diagnosis
+        self.last_error = (
+            f"web={web_err or 'empty_parse'} | "
+            f"knowledge={kb_err or 'empty_parse'}"
+        )
         return []
 
     def _parse_json_array(self, text: str) -> list:

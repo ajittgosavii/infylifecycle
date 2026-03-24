@@ -287,9 +287,13 @@ if _os_rc is not None or _db_rc is not None:
         st.success(f"✅ Last Agent 1 run fetched {_os_display} and {_db_display}. "
                    f"Browse the tabs below.")
     else:
-        st.warning("⚠️ Last Agent 1 run completed but returned 0 rows. "
-                   "This usually means the API key ran out of quota or web_search was unavailable. "
-                   "Try running Agent 1 again.")
+        st.error(
+            "❌ **Agent 1 returned 0 rows.** The Anthropic API calls are failing. "
+            "Check the progress bar messages above when you run Agent 1 — they now show "
+            "the exact error (e.g. model not found, quota exceeded, network issue). "
+            "Most common cause: API key quota exhausted. "
+            "Check your usage at **console.anthropic.com**."
+        )
 
 
 # ── Agent 3 refresh banner ────────────────────────────────────────────────────
@@ -697,7 +701,7 @@ with tab_status:
         st.markdown(f"""**{icon2} Agent 2 — Recommendation Engine**
 - Status: `{s2.upper()}`
 - Generates expert recommendations per row
-- Tool: Claude claude-opus-4-20250514
+- Tool: Claude claude-sonnet-4-6
 - Batch size: 20 rows per API call
 - Rules: EOL → CRITICAL, Expiring → URGENT, Supported → PLAN
 - Oracle versions: flags PostgreSQL migration opportunity""")
@@ -800,6 +804,6 @@ with dl_col:
 st.markdown(
     "<p style='text-align:center;color:#94A3B8;font-size:0.72rem;margin-top:1.5rem;'>"
     "INFY Migration Reference Tracker · Infosys Enterprise Architecture · "
-    "Powered by Claude AI (Anthropic) · claude-opus-4-20250514 · All data fetched live from the internet</p>",
+    "Powered by Claude AI (Anthropic) · claude-sonnet-4-6 · All data fetched live from the internet</p>",
     unsafe_allow_html=True
 )
