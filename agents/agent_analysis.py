@@ -12,7 +12,7 @@ from datetime import date, datetime
 
 PROJECT_END = date(2028, 6, 30)
 TODAY       = date.today()
-DB_PATH     = os.path.join(os.path.dirname(__file__), "..", "agent5_conversations.db")
+DB_PATH     = "/tmp/agent5_conversations.db"   # /tmp is writable on Streamlit Cloud
 
 VERDICTS = ["CRITICAL", "UPGRADE NOW", "EXTEND + PLAN", "REPLACE", "CLOUD MIGRATE", "MONITOR"]
 
