@@ -52,6 +52,7 @@ _m_refresh   = _load("agents.agent_refresh",   "agents/agent_refresh.py")
 _m_version   = _load("agents.agent_versioning","agents/agent_versioning.py")
 _m_analysis  = _load("agents.agent_analysis",  "agents/agent_analysis.py")
 _m_export    = _load("utils.excel_export",     "utils/excel_export.py")
+_m_store     = _load("utils.data_store",       "utils/data_store.py")
 
 OSDataAgent          = _m_os.OSDataAgent
 RecommendationAgent  = _m_db.RecommendationAgent
@@ -63,6 +64,16 @@ OS_DATA              = _m_baseline.OS_DATA
 DB_DATA              = _m_baseline.DB_DATA
 OS_COLUMNS           = _m_baseline.OS_COLUMNS
 DB_COLUMNS           = _m_baseline.DB_COLUMNS
+
+# Data store helpers
+save_os_df      = _m_store.save_os_df
+save_db_df      = _m_store.save_db_df
+load_os_df      = _m_store.load_os_df
+load_db_df      = _m_store.load_db_df
+save_app_state  = _m_store.save_app_state
+load_app_state  = _m_store.load_app_state
+has_stored_data = _m_store.has_stored_data
+get_rec_stats   = _m_store.get_rec_stats
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -104,19 +115,39 @@ st.markdown("""
 
 # ── Session state ─────────────────────────────────────────────────────────────
 def _init():
-    defaults = {
-        # Load baseline data immediately — visible before Agent 1 runs
-        "os_df":         pd.DataFrame(OS_DATA),
-        "db_df":         pd.DataFrame(DB_DATA),
-        "last_refresh":  None,
-        "a1_status":     "idle",
-        "a2_status":     "idle",
-        "changes_log":   [],
-        "old_os_df":     None,
-        "old_db_df":     None,
+    if "os_df" not in st.session_state:
+        # ── Load from SQLite if data exists, else load baseline and save it ──
+        if has_stored_data():
+            stored_os = load_os_df()
+            stored_db = load_db_df()
+            st.session_state["os_df"] = stored_os
+            st.session_state["db_df"] = stored_db
+        else:
+            # First ever run — load baseline and immediately persist to SQLite
+            baseline_os = pd.DataFrame(OS_DATA)
+            baseline_db = pd.DataFrame(DB_DATA)
+            save_os_df(baseline_os)
+            save_db_df(baseline_db)
+            st.session_state["os_df"] = baseline_os
+            st.session_state["db_df"] = baseline_db
+
+    # Restore last_refresh from SQLite so Agent 3 timer survives restarts
+    if "last_refresh" not in st.session_state:
+        saved_refresh = load_app_state("last_refresh")
+        if saved_refresh:
+            try:
+                st.session_state["last_refresh"] = datetime.fromisoformat(saved_refresh)
+            except Exception:
+                st.session_state["last_refresh"] = None
+        else:
+            st.session_state["last_refresh"] = None
+
+    # Other session defaults
+    for k, v in {
+        "a1_status": "idle", "a2_status": "idle",
+        "changes_log": [], "old_os_df": None, "old_db_df": None,
         "a3_skip_until": None,
-    }
-    for k, v in defaults.items():
+    }.items():
         if k not in st.session_state:
             st.session_state[k] = v
 
@@ -205,6 +236,35 @@ with st.sidebar:
     st.caption(f"📊 OS: **{len(st.session_state.os_df)}** · DB: **{len(st.session_state.db_df)}** rows")
     st.caption(f"💡 Recommendations: OS {os_recs} · DB {db_recs}")
 
+    # ── Persistence status ────────────────────────────────────────────────────
+    st.divider()
+    stats = get_rec_stats()
+    last_saved = stats.get("last_saved", "Never")
+    if last_saved and last_saved != "Never":
+        try:
+            last_saved = datetime.fromisoformat(last_saved).strftime("%d %b %Y %H:%M")
+        except Exception:
+            pass
+    if stats["os_with_recs"] > 0 or stats["db_with_recs"] > 0:
+        st.markdown(
+            f"<div style='background:#F0FDF4;border:1px solid #BBF7D0;border-radius:8px;"
+            f"padding:0.5rem 0.75rem;font-size:0.78rem;color:#166534;'>"
+            f"💾 <strong>Database</strong><br>"
+            f"OS: {stats['os_with_recs']}/{stats['os_total']} recs stored<br>"
+            f"DB: {stats['db_with_recs']}/{stats['db_total']} recs stored<br>"
+            f"Last saved: {last_saved}"
+            f"</div>", unsafe_allow_html=True
+        )
+    else:
+        st.markdown(
+            f"<div style='background:#FFF7ED;border:1px solid #FED7AA;border-radius:8px;"
+            f"padding:0.5rem 0.75rem;font-size:0.78rem;color:#92400E;'>"
+            f"💾 <strong>Database</strong><br>"
+            f"No recommendations stored yet.<br>"
+            f"Run Agent 2 to generate &amp; persist."
+            f"</div>", unsafe_allow_html=True
+        )
+
 
 # ── Header ────────────────────────────────────────────────────────────────────
 st.markdown("""
@@ -283,6 +343,11 @@ if run_a1:
         st.session_state.a5_os_done   = False
         st.session_state.a5_db_done   = False
 
+        # ── Persist Agent 1 date changes to SQLite ────────────────────────────
+        save_os_df(new_os)
+        save_db_df(new_db)
+        save_app_state("last_refresh", datetime.now().isoformat())
+
         if changes:
             st.success(f"✅ **Agent 1 complete!** Found **{len(changes)} date changes** from the internet.")
             for c in changes[:10]:
@@ -308,14 +373,25 @@ if run_a2:
 
     try:
         from openai import OpenAI as _OAI2
-        _c2    = _OAI2(api_key=api_key)
-        _r2    = _c2.chat.completions.create(
-            model="gpt-4o-mini",
-            max_tokens=20,
-            messages=[{"role": "user", "content": "Reply with one word: READY"}]
-        )
+        _c2 = _OAI2(api_key=api_key)
+        _model2 = None
+        for _m2 in ["gpt-4o-mini", "gpt-3.5-turbo", "gpt-3.5-turbo-0125"]:
+            try:
+                _r2 = _c2.chat.completions.create(
+                    model=_m2, max_tokens=20,
+                    messages=[{"role": "user", "content": "Reply: READY"}]
+                )
+                _model2 = _m2
+                st.session_state["_openai_model"] = _m2
+                break
+            except Exception as _me2:
+                if "not found" in str(_me2).lower() or "404" in str(_me2):
+                    continue
+                raise _me2
+        if not _model2:
+            raise Exception("No supported model found on this OpenAI account")
         _reply2 = _r2.choices[0].message.content.strip()
-        chk1.success(f"✅ **Checkpoint 1/4 PASSED** — OpenAI gpt-4o-mini connected. Response: **{_reply2}**")
+        chk1.success(f"✅ **Checkpoint 1/4 PASSED** — OpenAI `{_model2}` connected. Response: **{_reply2}**")
     except Exception as _ex2:
         chk1.error(
             f"❌ **Checkpoint 1/4 FAILED** — OpenAI API not reachable.\n\n"
@@ -342,8 +418,10 @@ if run_a2:
             st.session_state.os_df, progress_callback=a2_os_cb)
         st.session_state.os_df = new_os
         os_filled = (new_os["Recommendation"] != "").sum()
+        # ── Save OS recommendations to SQLite immediately ─────────────────────
+        save_os_df(new_os)
         chk2.success(f"✅ **Checkpoint 2/4 PASSED** — OS recommendations filled: "
-                     f"**{os_filled} / {len(new_os)} rows**")
+                     f"**{os_filled} / {len(new_os)} rows** · 💾 Saved to database")
     except Exception as e:
         chk2.error(f"❌ **Checkpoint 2/4 FAILED** — OS recommendations error: `{e}`")
         st.session_state.a2_status = "error"
@@ -363,26 +441,31 @@ if run_a2:
             st.session_state.db_df, progress_callback=a2_db_cb)
         st.session_state.db_df = new_db
         db_filled = (new_db["Recommendation"] != "").sum()
+        # ── Save DB recommendations to SQLite immediately ─────────────────────
+        save_db_df(new_db)
         chk3.success(f"✅ **Checkpoint 3/4 PASSED** — DB recommendations filled: "
-                     f"**{db_filled} / {len(new_db)} rows**")
+                     f"**{db_filled} / {len(new_db)} rows** · 💾 Saved to database")
     except Exception as e:
         chk3.error(f"❌ **Checkpoint 3/4 FAILED** — DB recommendations error: `{e}`")
         st.session_state.a2_status = "error"
         st.stop()
 
     # ── Checkpoint 4: Summary ─────────────────────────────────────────────────
-        os_filled = (st.session_state.os_df["Recommendation"] != "").sum()
-        db_filled = (st.session_state.db_df["Recommendation"] != "").sum()
-        total     = os_filled + db_filled
-        st.success(
-            f"✅ **Checkpoint 4/4 — Agent 2 COMPLETE** | "
-            f"OS: {os_filled}/{len(st.session_state.os_df)} rows | "
-            f"DB: {db_filled}/{len(st.session_state.db_df)} rows | "
-            f"Total: **{total} recommendations generated by OpenAI**"
-        )
-        st.session_state.a2_status = "done"
-        if st.session_state.last_refresh is None:
-            st.session_state.last_refresh = datetime.now()
+    os_filled = (st.session_state.os_df["Recommendation"] != "").sum()
+    db_filled = (st.session_state.db_df["Recommendation"] != "").sum()
+    total     = os_filled + db_filled
+    now       = datetime.now()
+    save_app_state("last_refresh", now.isoformat())
+    save_app_state("a2_last_run",  now.isoformat())
+    st.success(
+        f"✅ **Checkpoint 4/4 — Agent 2 COMPLETE** | "
+        f"OS: {os_filled}/{len(st.session_state.os_df)} rows | "
+        f"DB: {db_filled}/{len(st.session_state.db_df)} rows | "
+        f"Total: **{total} recommendations** · 💾 **Persisted to database**"
+    )
+    st.session_state.a2_status = "done"
+    if st.session_state.last_refresh is None:
+        st.session_state.last_refresh = now
 
     st.rerun()
 
@@ -993,12 +1076,25 @@ with tab_a5:
                 try:
                     from openai import OpenAI as _OAI
                     _client = _OAI(api_key=api_key)
-                    _resp   = _client.chat.completions.create(
-                        model="gpt-4o-mini", max_tokens=10,
-                        messages=[{"role":"user","content":"Reply: READY"}]
-                    )
+                    # Try models in order until one works
+                    _model_used = None
+                    for _m in ["gpt-4o-mini", "gpt-3.5-turbo", "gpt-3.5-turbo-0125"]:
+                        try:
+                            _resp = _client.chat.completions.create(
+                                model=_m, max_tokens=10,
+                                messages=[{"role":"user","content":"Reply: READY"}]
+                            )
+                            _model_used = _m
+                            st.session_state["_openai_model"] = _m
+                            break
+                        except Exception as _me:
+                            if "not found" in str(_me).lower() or "404" in str(_me):
+                                continue
+                            raise _me
+                    if not _model_used:
+                        raise Exception("No supported model found on this OpenAI account")
                     _reply = _resp.choices[0].message.content.strip()
-                    _log("✅", f"**OpenAI API connected** — responded: **{_reply}**")
+                    _log("✅", f"**OpenAI API connected** — model: `{_model_used}` · response: **{_reply}**")
                     st.session_state.a5_preflight_done = True
                 except Exception as _ex:
                     _log("❌", f"**OpenAI API FAILED** — `{str(_ex)}`\n\nCheck: platform.openai.com/usage")
@@ -1023,6 +1119,8 @@ with tab_a5:
                 new_os = agent5.analyse_os(st.session_state.os_df, principles, costs, context, os5_cb)
                 st.session_state.os_df    = new_os
                 st.session_state.a5_os_done = True
+                # Persist Final Recommendations to SQLite
+                save_os_df(new_os)
 
                 if "Analysis Source" in new_os.columns:
                     ai_c = (new_os["Analysis Source"] == "OpenAI").sum()
@@ -1049,6 +1147,8 @@ with tab_a5:
                 new_db = agent5.analyse_db(st.session_state.db_df, principles, costs, context, db5_cb)
                 st.session_state.db_df    = new_db
                 st.session_state.a5_db_done = True
+                # Persist Final Recommendations to SQLite
+                save_db_df(new_db)
 
                 if "Analysis Source" in new_db.columns:
                     ai_c = (new_db["Analysis Source"] == "OpenAI").sum()
