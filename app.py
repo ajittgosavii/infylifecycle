@@ -194,12 +194,42 @@ def badge(status: str) -> str:
 
 # ── Sidebar ────────────────────────────────────────────────────────────────────
 with st.sidebar:
-    _logo_path = os.path.join(_HERE, "logo.svg")
-    if os.path.exists(_logo_path):
-        with open(_logo_path, "r") as _lf:
-            st.markdown(_lf.read(), unsafe_allow_html=True)
-    else:
-        st.markdown("### INFY Lifecycle Tracker")
+    st.markdown("""
+    <div style="background:linear-gradient(135deg,#001F5B 0%,#003087 50%,#0057C8 100%);
+                border-radius:12px;padding:14px 16px;text-align:center;">
+      <div style="display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:6px;">
+        <div style="position:relative;width:40px;height:40px;">
+          <svg viewBox="0 0 40 40" width="40" height="40" style="animation:logospin 8s linear infinite;">
+            <circle cx="20" cy="20" r="16" fill="none" stroke="#00C6FF" stroke-width="2" opacity="0.3"/>
+            <circle cx="20" cy="20" r="12" fill="none" stroke="#00C6FF" stroke-width="2"
+                    stroke-dasharray="18 58" stroke-linecap="round"/>
+          </svg>
+          <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+                      width:6px;height:6px;background:#00C6FF;border-radius:50%;"></div>
+        </div>
+        <div style="text-align:left;">
+          <div style="font-size:20px;font-weight:800;color:white;letter-spacing:2px;line-height:1;">INFY</div>
+          <div style="font-size:8.5px;color:#93C5FD;letter-spacing:2.5px;margin-top:3px;">LIFECYCLE TRACKER</div>
+        </div>
+      </div>
+      <div style="height:2px;background:#1E3A5F;border-radius:1px;overflow:hidden;margin:4px 0;">
+        <div style="height:100%;background:linear-gradient(90deg,#10B981,#34D399,#6EE7B7);
+                    border-radius:1px;animation:logosweep 4s ease-in-out infinite;"></div>
+      </div>
+      <div style="display:flex;justify-content:center;gap:12px;margin-top:6px;">
+        <span style="font-size:7.5px;color:#6EE7B7;display:flex;align-items:center;gap:3px;">
+          <span style="width:5px;height:5px;background:#10B981;border-radius:50%;display:inline-block;"></span>LIVE</span>
+        <span style="font-size:7.5px;color:#FCD34D;display:flex;align-items:center;gap:3px;">
+          <span style="width:5px;height:5px;background:#F59E0B;border-radius:50%;display:inline-block;"></span>5 AGENTS</span>
+        <span style="font-size:7.5px;color:#93C5FD;display:flex;align-items:center;gap:3px;">
+          <span style="width:5px;height:5px;background:#60A5FA;border-radius:50%;display:inline-block;"></span>AI</span>
+      </div>
+    </div>
+    <style>
+      @keyframes logospin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+      @keyframes logosweep{0%,100%{width:20%;margin-left:0}50%{width:80%;margin-left:10%}}
+    </style>
+    """, unsafe_allow_html=True)
     st.divider()
 
     st.subheader("🔑 OpenAI API Key")
