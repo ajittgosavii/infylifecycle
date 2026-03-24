@@ -544,7 +544,7 @@ with tab_status:
 - Status: `{s1.upper()}`
 - Baseline: **{len(OS_DATA)} OS + {len(DB_DATA)} DB** rows pre-loaded from OpenAI knowledge
 - Task: Checks internet for lifecycle date changes only
-- Tool: `gpt-4o-search-preview` + `web_search_preview` (16 targeted checks)
+- Tool: `gpt-4o-mini (16 targeted checks)
 - Updates: Notes column with [Web verified: date]""")
 
     s2 = st.session_state.a2_status
@@ -1419,7 +1419,7 @@ with dl_col:
 st.markdown(
     "<p style='text-align:center;color:#94A3B8;font-size:0.72rem;margin-top:1.5rem;'>"
     "INFY Migration Reference Tracker · Infosys Enterprise Architecture · "
-    "Powered by OpenAI GPT · gpt-4o-search-preview (A1) · gpt-4o-mini (A2/A5) · "
+    "Powered by OpenAI GPT · gpt-4o-mini (A1/A2/A5) · gpt-4o-mini (A2/A5) · "
     "All data from AI knowledge base + internet verification</p>",
     unsafe_allow_html=True
 )
