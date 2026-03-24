@@ -684,96 +684,197 @@ with tab_a5:
             if a5s == "idle":
                 st.session_state.a5_status = "chatting"
                 session_id = PolicyAnalysisAgent.get_or_create_session()
-                # Kick off with agent's opening message
-                agent5  = PolicyAnalysisAgent(api_key=api_key)
-                opening = agent5.chat([])
-                _save_message(session_id, "assistant", opening)
+                # Save a placeholder so the welcome panel shows while opening loads
+                st.session_state.a5_opening_pending = True
                 st.rerun()
 
             session_id = PolicyAnalysisAgent.get_or_create_session()
+            messages   = _load_messages(session_id)
 
-            st.subheader("💬 Chat with Agent 5")
-            st.caption(
-                f"Session **{session_id}** · "
-                "Agent 5 searches the web in real-time for ESU costs, migration pricing, "
-                "upgrade guides and EOL dates as you chat. "
-                "When it has enough context it will automatically proceed."
-            )
+            # ── Welcome / guidance panel (shown only when chat is empty) ──────
+            if not messages:
+                st.markdown("""
+                <div style="background:linear-gradient(135deg,#EFF6FF,#F0FDF4);
+                            border:1px solid #BFDBFE;border-radius:12px;
+                            padding:1.4rem 1.6rem;margin-bottom:1.2rem;">
+                  <h3 style="margin:0 0 0.6rem;color:#1E40AF;font-size:1.1rem;">
+                    👋 Welcome to Agent 5 — Your Migration Policy Advisor
+                  </h3>
+                  <p style="margin:0 0 0.8rem;color:#374151;font-size:0.9rem;">
+                    Agent 5 will guide you through a <strong>natural conversation</strong>
+                    to define your organisation's migration policy for
+                    <strong>Apr 2026 → Jun 2028</strong>. It adapts to your answers and
+                    <strong>searches the internet in real-time</strong> for pricing,
+                    ESU costs, migration guides and upgrade paths.
+                  </p>
+                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.6rem;margin-bottom:0.8rem;">
+                    <div style="background:white;border-radius:8px;padding:0.6rem 0.8rem;border:1px solid #E5E7EB;">
+                      <strong style="color:#1D4ED8;font-size:0.82rem;">💬 What to expect</strong><br>
+                      <span style="font-size:0.8rem;color:#6B7280;">
+                        10–15 focused questions about risk tolerance, budgets,
+                        OS/DB migration paths, compliance scope and execution capacity.
+                      </span>
+                    </div>
+                    <div style="background:white;border-radius:8px;padding:0.6rem 0.8rem;border:1px solid #E5E7EB;">
+                      <strong style="color:#059669;font-size:0.82rem;">🔍 Real-time searches</strong><br>
+                      <span style="font-size:0.8rem;color:#6B7280;">
+                        Ask about ESU costs, cloud DB pricing, RHEL subscriptions,
+                        Oracle support fees or any migration guide — it searches live.
+                      </span>
+                    </div>
+                    <div style="background:white;border-radius:8px;padding:0.6rem 0.8rem;border:1px solid #E5E7EB;">
+                      <strong style="color:#7C3AED;font-size:0.82rem;">⚖️ Guiding Principles</strong><br>
+                      <span style="font-size:0.8rem;color:#6B7280;">
+                        Your answers become 8–10 named Guiding Principles (GP-01…)
+                        that govern every migration recommendation.
+                      </span>
+                    </div>
+                    <div style="background:white;border-radius:8px;padding:0.6rem 0.8rem;border:1px solid #E5E7EB;">
+                      <strong style="color:#DC2626;font-size:0.82rem;">📊 Final Recommendations</strong><br>
+                      <span style="font-size:0.8rem;color:#6B7280;">
+                        Cross-references Agent 2's technical advice with your policy
+                        to produce a Final Recommendations sheet in Excel.
+                      </span>
+                    </div>
+                  </div>
+                  <p style="margin:0;color:#6B7280;font-size:0.8rem;">
+                    💡 <strong>Tip:</strong> Answer in your own words — you don't need to follow a format.
+                    You can also ask Agent 5 questions at any time, e.g.
+                    <em>"What does Windows Server 2016 ESU cost?"</em> or
+                    <em>"What's the best path to migrate Oracle to PostgreSQL?"</em>
+                  </p>
+                </div>
+                """, unsafe_allow_html=True)
 
-            # ── Render chat history from SQLite ───────────────────────────────
-            messages = _load_messages(session_id)
-            for msg in messages:
-                with st.chat_message(msg["role"],
-                                     avatar="🧠" if msg["role"] == "assistant" else "👤"):
-                    st.markdown(msg["content"])
+                # ── Starter prompts ───────────────────────────────────────────
+                st.markdown("**🚀 Start with one of these, or type your own:**")
+                starter_cols = st.columns(2)
+                starters = [
+                    ("🏢 Enterprise context",
+                     "We are a large enterprise running a mix of Windows Server, RHEL, Oracle and SQL Server. We have PCI DSS compliance requirements and our priority is zero EOL risk for Tier-1 systems."),
+                    ("💰 Cost-focused",
+                     "Our budget is constrained. We need to know the real cost of extending support vs migrating. Can you help me understand the ESU pricing for Windows Server 2016 and SQL Server 2017?"),
+                    ("☁️ Cloud migration",
+                     "We are planning to migrate our SQL Server and Oracle databases to the cloud. Our preferred provider is Azure. What should I consider for the migration policy?"),
+                    ("🔒 Compliance-led",
+                     "We are under HIPAA and SOX compliance. Our risk tolerance for EOL software is zero for regulated systems. We have a small migration team of 5 people."),
+                ]
+                for i, (label, prompt_text) in enumerate(starters):
+                    with starter_cols[i % 2]:
+                        if st.button(label, key=f"starter_{i}", width="stretch",
+                                     help=prompt_text[:80] + "..."):
+                            _save_message(session_id, "user", prompt_text)
+                            with st.spinner("🧠 Agent 5 is preparing your personalised policy session..."):
+                                agent5   = PolicyAnalysisAgent(api_key=api_key)
+                                all_msgs = _load_messages(session_id)
+                                reply    = agent5.chat(all_msgs)
+                                _save_message(session_id, "assistant", reply)
+                                _save_session_context(session_id, {}, "", "chatting")
+                            st.rerun()
 
-            # ── User input ────────────────────────────────────────────────────
-            if user_input := st.chat_input(
-                "Ask about costs, ESU pricing, migration options, or answer Agent 5's questions..."
-            ):
-                _save_message(session_id, "user", user_input)
-                with st.chat_message("user", avatar="👤"):
-                    st.markdown(user_input)
+                st.divider()
 
-                with st.chat_message("assistant", avatar="🧠"):
-                    with st.spinner("🔍 Agent 5 is searching and thinking..."):
-                        agent5 = PolicyAnalysisAgent(api_key=api_key)
-                        all_msgs = _load_messages(session_id)
-                        reply    = agent5.chat(all_msgs)
-
-                    done, context, summary = agent5.is_conversation_complete(reply)
-
-                    if done:
-                        complete_msg = (
-                            f"✅ **I have enough policy context to proceed.**\n\n"
-                            f"**Summary:** {summary}\n\n"
-                            f"Moving to Phase 2 — generating your Guiding Principles..."
-                        )
-                        st.markdown(complete_msg)
-                        _save_message(session_id, "assistant", complete_msg)
-                        _save_session_context(session_id, context, summary, "principles")
-                        st.session_state.a5_context = context
-                        st.session_state.a5_status  = "principles"
-                    else:
-                        st.markdown(reply)
-                        _save_message(session_id, "assistant", reply)
-                        _save_session_context(session_id, {}, "", "chatting")
-                st.rerun()
-
-            # ── Manual proceed + controls ─────────────────────────────────────
-            st.divider()
-            col_proceed, col_reset = st.columns([2, 1])
-            with col_proceed:
-                if len(messages) >= 6:
-                    if st.button("➡️ I've answered enough — proceed to analysis",
-                                 width="stretch"):
-                        agent5     = PolicyAnalysisAgent(api_key=api_key)
-                        all_msgs   = _load_messages(session_id)
-                        ctx_prompt = (
-                            "Extract policy context as JSON with keys: "
-                            "eol_tolerance, min_runway, compliance, esu_budget, "
-                            "windows_path, linux_path, db_path, oracle_stance, "
-                            "cloud_provider, migration_capacity, criticality, rollback. "
-                            "Return ONLY the JSON object."
-                        )
-                        try:
-                            r = agent5.client.chat.completions.create(
-                                model="gpt-4o-mini", max_tokens=600,
-                                messages=all_msgs + [{"role":"user","content":ctx_prompt}]
-                            )
-                            t = r.choices[0].message.content.strip()
-                            s, e = t.find("{"), t.rfind("}")
-                            context = json.loads(t[s:e+1]) if s != -1 and e > s else {}
-                        except Exception:
-                            context = {"note": "Extracted from conversation"}
-                        _save_session_context(session_id, context, "Manual proceed", "principles")
-                        st.session_state.a5_context = context
-                        st.session_state.a5_status  = "principles"
-                        st.rerun()
-            with col_reset:
-                if st.button("🔄 New Conversation", width="stretch"):
-                    PolicyAnalysisAgent.reset()
+                # ── Generate opening message if not yet done ──────────────────
+                if st.session_state.get("a5_opening_pending"):
+                    with st.spinner("🧠 Agent 5 is preparing your session..."):
+                        agent5  = PolicyAnalysisAgent(api_key=api_key)
+                        opening = agent5.chat([])
+                        _save_message(session_id, "assistant", opening)
+                        st.session_state.a5_opening_pending = False
                     st.rerun()
+                else:
+                    if st.button("▶ Let Agent 5 start the conversation", type="primary",
+                                 width="stretch"):
+                        st.session_state.a5_opening_pending = True
+                        st.rerun()
+
+            else:
+                # ── Show session info bar ─────────────────────────────────────
+                st.markdown(
+                    f"<div style='background:#F0FDF4;border:1px solid #BBF7D0;border-radius:8px;"
+                    f"padding:0.5rem 1rem;margin-bottom:0.8rem;font-size:0.82rem;color:#166534;'>"
+                    f"💬 Session <strong>{session_id}</strong> · "
+                    f"{len(messages)} message{'s' if len(messages) != 1 else ''} · "
+                    f"🔍 Agent 5 searches the web in real-time for costs, pricing and migration guides"
+                    f"</div>",
+                    unsafe_allow_html=True
+                )
+
+                # ── Render chat history ───────────────────────────────────────
+                for msg in messages:
+                    with st.chat_message(msg["role"],
+                                         avatar="🧠" if msg["role"] == "assistant" else "👤"):
+                        st.markdown(msg["content"])
+
+            # ── User chat input (always shown when chatting) ──────────────────
+            if messages or not st.session_state.get("a5_opening_pending"):
+                if user_input := st.chat_input(
+                    "Ask about ESU costs, migration options, compliance, or answer Agent 5's questions..."
+                ):
+                    _save_message(session_id, "user", user_input)
+                    with st.chat_message("user", avatar="👤"):
+                        st.markdown(user_input)
+
+                    with st.chat_message("assistant", avatar="🧠"):
+                        with st.spinner("🔍 Agent 5 is searching and thinking..."):
+                            agent5   = PolicyAnalysisAgent(api_key=api_key)
+                            all_msgs = _load_messages(session_id)
+                            reply    = agent5.chat(all_msgs)
+
+                        done, context, summary = agent5.is_conversation_complete(reply)
+
+                        if done:
+                            complete_msg = (
+                                f"✅ **I have enough policy context to proceed.**\n\n"
+                                f"**Policy Summary:** {summary}\n\n"
+                                f"Moving to Phase 2 — generating your Guiding Principles..."
+                            )
+                            st.markdown(complete_msg)
+                            _save_message(session_id, "assistant", complete_msg)
+                            _save_session_context(session_id, context, summary, "principles")
+                            st.session_state.a5_context = context
+                            st.session_state.a5_status  = "principles"
+                        else:
+                            st.markdown(reply)
+                            _save_message(session_id, "assistant", reply)
+                            _save_session_context(session_id, {}, "", "chatting")
+                    st.rerun()
+
+            # ── Controls ──────────────────────────────────────────────────────
+            if messages:
+                st.divider()
+                col_proceed, col_reset = st.columns([2, 1])
+                with col_proceed:
+                    if len(messages) >= 6:
+                        if st.button("➡️ Enough context — proceed to Guiding Principles",
+                                     type="primary", width="stretch"):
+                            agent5     = PolicyAnalysisAgent(api_key=api_key)
+                            all_msgs   = _load_messages(session_id)
+                            ctx_prompt = (
+                                "Extract policy context as JSON with keys: "
+                                "eol_tolerance, min_runway, compliance, esu_budget, "
+                                "windows_path, linux_path, db_path, oracle_stance, "
+                                "cloud_provider, migration_capacity, criticality, rollback. "
+                                "Return ONLY the JSON object."
+                            )
+                            try:
+                                r = agent5.client.chat.completions.create(
+                                    model="gpt-4o-mini", max_tokens=600,
+                                    messages=all_msgs + [{"role":"user","content":ctx_prompt}]
+                                )
+                                t = r.choices[0].message.content.strip()
+                                s, e = t.find("{"), t.rfind("}")
+                                context = json.loads(t[s:e+1]) if s != -1 and e > s else {}
+                            except Exception:
+                                context = {"note": "Extracted from conversation"}
+                            _save_session_context(session_id, context, "Manual proceed", "principles")
+                            st.session_state.a5_context = context
+                            st.session_state.a5_status  = "principles"
+                            st.rerun()
+                with col_reset:
+                    if st.button("🔄 New Conversation", width="stretch"):
+                        PolicyAnalysisAgent.reset()
+                        st.rerun()
 
         # ── PHASE 2: Generate Principles ──────────────────────────────────────
         elif a5s == "principles":
