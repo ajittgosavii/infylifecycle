@@ -1,6 +1,7 @@
 """
 INFY Migration Version Lifecycle Tracker
 5-Agent Streamlit Application — Infosys Enterprise Architecture
+v2.1 — Fixed OpenAI API compatibility
 
 Core design:
 - baseline_data.py holds ALL 321 OS/DB rows from AI training knowledge
