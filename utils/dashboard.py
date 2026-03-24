@@ -164,14 +164,14 @@ def eol_timeline_chart(os_df: pd.DataFrame, db_df: pd.DataFrame,
         x0=project_start.isoformat(), x1=project_end.isoformat(),
         fillcolor="#3B82F6", opacity=0.08,
         line_width=2, line_color="#3B82F6", line_dash="dash",
-        annotation_text="Project Window", annotation_position="top left"
     )
+    fig.add_annotation(x=project_start.isoformat(), y=1, yref="paper",
+                       text="Project Window", showarrow=False, font=dict(size=10, color="#3B82F6"))
 
     # Add today line
-    fig.add_vline(
-        x=today.isoformat(), line_dash="dot", line_color="#6B7280",
-        annotation_text="Today", annotation_position="top right"
-    )
+    fig.add_vline(x=today.isoformat(), line_dash="dot", line_color="#6B7280")
+    fig.add_annotation(x=today.isoformat(), y=1.05, yref="paper",
+                       text="Today", showarrow=False, font=dict(size=10, color="#6B7280"))
 
     fig.update_layout(
         height=max(400, len(df) * 22),
