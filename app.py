@@ -137,6 +137,9 @@ st.markdown("""
 .b-idle    { background:#F1F5F9; color:#64748B; }
 .b-running { background:#FEF3C7; color:#92400E; }
 .b-done    { background:#D1FAE5; color:#065F46; }
+.stTabs [data-baseweb="tab-list"] {
+    justify-content: center;
+}
 .b-error   { background:#FEE2E2; color:#991B1B; }
 </style>
 """, unsafe_allow_html=True)
