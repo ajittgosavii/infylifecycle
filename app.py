@@ -285,8 +285,10 @@ with st.sidebar:
     <b>🧠 Strategist — Policy Analysis Engine</b><br>{badge(a5s)}
     <small style="display:block;margin-top:4px;color:#666">Apr 2026 → Jun 2028</small>
     </div>""", unsafe_allow_html=True)
-    if st.button("▶ Open Strategist", width="stretch", key="open_a5"):
-        st.session_state["show_strategist"] = not st.session_state.get("show_strategist", False)
+    _a5_open = st.session_state.get("show_strategist", False)
+    _a5_label = "✕ Close Strategist" if _a5_open else "▶ Open Strategist"
+    if st.button(_a5_label, width="stretch", key="open_a5"):
+        st.session_state["show_strategist"] = not _a5_open
         st.rerun()
     st.divider()
 
@@ -646,11 +648,24 @@ if run_a2:
     st.rerun()
 
 
-# ── Tabs ───────────────────────────────────────────────────────────────────────
-tab_dash, tab_os, tab_db, tab_ws, tab_as, tab_fw = st.tabs([
-    "📊 Dashboard", "🖥️ OS Versions", "🗄️ DB Versions",
-    "🌐 Web Servers", "⚙️ App Servers", "📦 Frameworks",
-])
+# ── Main content: Tabs OR Strategist ──────────────────────────────────────────
+_show_strategist = st.session_state.get("show_strategist", False)
+
+if _show_strategist:
+    # Placeholder tabs (not displayed) to prevent NameError on with-blocks below
+    _placeholder = st.container()
+    with _placeholder:
+        tab_dash, tab_os, tab_db, tab_ws, tab_as, tab_fw = st.tabs([
+            "📊 Dashboard", "🖥️ OS Versions", "🗄️ DB Versions",
+            "🌐 Web Servers", "⚙️ App Servers", "📦 Frameworks",
+        ])
+    _placeholder.empty()  # Hide immediately
+else:
+    # ── Tabs ──────────────────────────────────────────────────────────────────
+    tab_dash, tab_os, tab_db, tab_ws, tab_as, tab_fw = st.tabs([
+        "📊 Dashboard", "🖥️ OS Versions", "🗄️ DB Versions",
+        "🌐 Web Servers", "⚙️ App Servers", "📦 Frameworks",
+    ])
 
 
 # ────────────────── Tab 0: Executive Dashboard ────────────────────────────────
@@ -1106,8 +1121,10 @@ with tab_fw:
 
 
 # ────────────────── Strategist Panel (shown when toggled from sidebar) ─────────
-if st.session_state.get("show_strategist", False):
-    st.divider()
+if _show_strategist:
+    if st.button("✕ Close Strategist — Back to Tabs", use_container_width=True):
+        st.session_state["show_strategist"] = False
+        st.rerun()
     st.markdown("""
     <div style="background:linear-gradient(135deg,#1a1a2e,#16213e,#0f3460);
                 padding:1.2rem 1.8rem;border-radius:12px;color:white;margin-bottom:1.5rem;">
