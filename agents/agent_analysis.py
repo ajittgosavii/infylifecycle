@@ -61,6 +61,126 @@ def get_family_display():
         ("Other",                "Other OS not listed above", "❓"),
     ]
 
+# ── OS Migration Guiding Principles (default knowledge base) ─────────────────
+DEFAULT_OS_PRINCIPLES = {
+    "Windows Family": {
+        "cloud_map": {"Azure": "Azure / Azure Gov", "AWS": "AWS", "GCP": "GCP", "OCI": "OCI",
+                       "GovCloud": "Azure Gov / AWS GovCloud", "_default": "Azure / Azure Gov"},
+        "upgrade": "COTS: Upgrade to Server 2022/2025 to maintain vendor support and security compliance.",
+        "replace":  "Custom: Replace Windows OS with Linux Containers (.NET Core) to eliminate license costs.",
+    },
+    "RHEL/Clone Family": {
+        "cloud_map": {"AWS": "AWS / GovCloud", "Azure": "Azure", "GCP": "GCP", "OCI": "OCI",
+                       "GovCloud": "AWS GovCloud", "_default": "AWS / GovCloud"},
+        "upgrade": "COTS: Upgrade to RHEL 9.x or Oracle Linux 9.x as required by the software vendor's certification.",
+        "replace":  "Custom: Replace legacy Linux with Amazon Linux 2023 to leverage AWS-native security and performance.",
+    },
+    "Debian/Ubuntu Family": {
+        "cloud_map": {"GCP": "GCP / GDC", "AWS": "AWS", "Azure": "Azure", "OCI": "OCI",
+                       "GovCloud": "GCP Assured Workloads", "_default": "GCP / GDC"},
+        "upgrade": "COTS: Upgrade to the latest LTS (Long Term Support) version to ensure a stable 5-year security patch window.",
+        "replace":  "Custom: Replace the standalone OS with Google Container-Optimized OS for microservices workloads.",
+    },
+    "SUSE Family": {
+        "cloud_map": {"Azure": "Azure / AWS", "AWS": "Azure / AWS", "GCP": "GCP", "OCI": "OCI",
+                       "GovCloud": "Azure Gov", "_default": "Azure / AWS"},
+        "upgrade": "COTS: Upgrade to SLES 15 SP5+ specifically for SAP HANA or high-availability enterprise applications.",
+        "replace":  "Custom: Replace manual SLES installs with Automated Cloud Images managed via SUSE Manager.",
+    },
+    "Legacy Unix": {
+        "cloud_map": {"_default": "On-Prem / Bare Metal"},
+        "upgrade": "None: No cloud upgrade path exists. Maintain \"As-Is\" on existing hardware with network isolation.",
+        "replace":  "COTS/Custom: Mandatory Replacement. Transition the workload to Modern x86 Linux on the preferred cloud provider.",
+    },
+    "BSD & VMS": {
+        "cloud_map": {"_default": "Specialized / Hybrid"},
+        "upgrade": "COTS: Upgrade to the latest stable release branch supported by the hardware abstraction layer.",
+        "replace":  "Custom: Replace with Hardened Linux Distributions to consolidate the technical skill set required for maintenance.",
+    },
+    "Apple": {
+        "cloud_map": {"AWS": "AWS / Local", "Azure": "Azure", "GCP": "GCP",
+                       "_default": "AWS / Local"},
+        "upgrade": "Custom: Upgrade to the latest N-1 Version to ensure compatibility with modern developer toolchains (Xcode).",
+        "replace":  "Custom: Replace physical on-prem hardware with Managed EC2 Mac Instances for cloud-based CI/CD.",
+    },
+}
+
+PRINCIPLES_TABLE_SYSTEM = f"""You are Agent 5 — a senior IT migration strategist at Infosys.
+Given the user's selected OS families and their chosen cloud provider, generate a guiding
+principles table. For each OS family, provide:
+- The best cloud target (considering the user's preference)
+- An OS Upgrade Principle (for COTS/vendor-supported software)
+- An OS Replacement Principle (for custom/modernized approaches)
+
+Be specific, actionable, and reference actual product versions.
+Return ONLY a JSON array:
+[{{"os_family": "...", "cloud_target": "...", "upgrade_principle": "...", "replacement_principle": "..."}}]
+
+Today: {TODAY}. Project ends 30 Jun 2028."""
+
+
+def generate_principles_table(selected_families, cloud_name, cloud_key, agent=None):
+    """
+    Generate the guiding principles table.
+    Uses defaults first, then optionally enhances with AI.
+    Returns list of dicts with keys: os_family, cloud_target, upgrade_principle, replacement_principle.
+    """
+    rows = []
+    for fam in selected_families:
+        if fam == "Other":
+            continue
+        defaults = DEFAULT_OS_PRINCIPLES.get(fam)
+        if defaults:
+            cloud_map = defaults.get("cloud_map", {})
+            cloud_target = cloud_map.get(cloud_key, cloud_map.get("_default", cloud_name))
+            rows.append({
+                "os_family": fam,
+                "cloud_target": cloud_target,
+                "upgrade_principle": defaults["upgrade"],
+                "replacement_principle": defaults["replace"],
+            })
+        else:
+            # Unknown family — provide generic
+            rows.append({
+                "os_family": fam,
+                "cloud_target": cloud_name,
+                "upgrade_principle": "Upgrade to the latest supported version to maintain vendor support.",
+                "replacement_principle": "Evaluate containerization or cloud-native alternatives.",
+            })
+
+    # Optionally enhance with AI if agent provided
+    if agent and rows:
+        try:
+            prompt = (
+                f"User's selected OS families: {', '.join(selected_families)}\n"
+                f"User's preferred cloud: {cloud_name}\n\n"
+                f"Here are the default principles I've prepared:\n"
+                + json.dumps(rows, indent=2) +
+                f"\n\nReview and enhance these principles to be more specific to the "
+                f"user's cloud choice ({cloud_name}). Keep the same structure but "
+                f"make recommendations more tailored. Return ONLY the JSON array."
+            )
+            resp = agent.client.chat.completions.create(
+                model=agent.model, max_tokens=2000,
+                messages=[
+                    {"role": "system", "content": PRINCIPLES_TABLE_SYSTEM},
+                    {"role": "user", "content": prompt}
+                ])
+            text = resp.choices[0].message.content.strip()
+            if "```" in text:
+                text = text.split("```json")[-1].split("```")[0] if "```json" in text \
+                       else text.split("```")[1].split("```")[0]
+            s, e = text.find("["), text.rfind("]")
+            if s != -1 and e > s:
+                enhanced = json.loads(text[s:e+1])
+                if enhanced and len(enhanced) == len(rows):
+                    rows = enhanced
+        except Exception:
+            pass  # Keep defaults if AI fails
+
+    return rows
+
+
 LANDSCAPE_VERIFY_SYSTEM = """You are Agent 5 — a senior IT migration strategist.
 The user says they have an OS that is not in our tracked list.
 Your job is to determine:
@@ -281,7 +401,8 @@ class PolicyAnalysisAgent:
                   "a5_ws_done","a5_as_done","a5_fw_done",
                   "a5_preflight_done","a5_log",
                   "a5_landscape_families","a5_landscape_selected",
-                  "a5_landscape_other_pending","a5_custom_cloud_profiles"]:
+                  "a5_landscape_other_pending","a5_custom_cloud_profiles",
+                  "a5_principles_table_data"]:
             st.session_state.pop(k, None)
         PolicyAnalysisAgent.init_session()
 

@@ -1123,11 +1123,12 @@ with tab_a5:
         a5s = st.session_state.get("a5_status", "idle")
 
         # ── Progress stepper ──────────────────────────────────────────────────
-        steps    = ["🗺️ Landscape", "☁️ Cloud Profile", "💬 Policy Chat", "⚖️ Principles", "💰 Cost Intel", "🧠 Analysis", "✅ Complete"]
+        steps    = ["🗺️ Landscape", "☁️ Cloud", "📋 Principles", "💬 Policy Chat", "⚖️ GP Generate", "💰 Cost Intel", "🧠 Analysis", "✅ Complete"]
         step_map = {"idle":0,"landscape":0,"landscape_other":0,
                     "cloud_profile":1,"cloud_other":1,
-                    "chatting":2,"principles":3,"costing":4,
-                    "ready":4,"analysing":5,"done":6}
+                    "principles_table":2,
+                    "chatting":3,"principles":4,"costing":5,
+                    "ready":5,"analysing":6,"done":7}
         cur_step = step_map.get(a5s, 0)
         s_cols   = st.columns(len(steps))
         for i, (col, lbl) in enumerate(zip(s_cols, steps)):
@@ -1418,7 +1419,7 @@ with tab_a5:
                     elif selected_cloud:
                         st.session_state.a5_context["cloud_provider"] = selected_cloud[0]
                         st.session_state.a5_context["cloud_key"] = selected_cloud[1]
-                        st.session_state.a5_status = "chatting"
+                        st.session_state.a5_status = "principles_table"
                         st.rerun()
                     else:
                         st.warning("Please select at least one cloud profile, or choose Other.")
@@ -1491,7 +1492,112 @@ with tab_a5:
                 st.divider()
                 if st.button("⏭️ Skip — Use no specific cloud preference", use_container_width=True):
                     st.session_state.a5_context["cloud_provider"] = "No strong preference"
-                    st.session_state.a5_status = "chatting"
+                    st.session_state.a5_status = "principles_table"
+                    st.rerun()
+
+        # ── PHASE 0d: GUIDING PRINCIPLES TABLE ──────────────────────────────
+        elif a5s == "principles_table":
+            from agents.agent_analysis import generate_principles_table
+
+            st.markdown("""
+            <div style="background:linear-gradient(135deg,#F0FDF4,#ECFDF5);
+                        border:1px solid #A7F3D0;border-radius:12px;
+                        padding:1.2rem 1.4rem;margin-bottom:1rem;">
+              <h3 style="margin:0 0 0.5rem;color:#065F46;font-size:1.05rem;">
+                📋 OS Migration Guiding Principles
+              </h3>
+              <p style="margin:0;color:#374151;font-size:0.88rem;">
+                Based on your <strong>OS landscape</strong> and <strong>cloud profile</strong>,
+                here are the guiding principles for your modernization strategy.
+              </p>
+            </div>""", unsafe_allow_html=True)
+
+            selected_fams = st.session_state.get("a5_landscape_selected", [])
+            cloud_name = st.session_state.get("a5_context", {}).get("cloud_provider", "No preference")
+            cloud_key = st.session_state.get("a5_context", {}).get("cloud_key", "")
+
+            # Generate or use cached table
+            if "a5_principles_table_data" not in st.session_state:
+                with st.spinner("🧠 Agent 5 generating tailored guiding principles..."):
+                    try:
+                        agent5 = PolicyAnalysisAgent(api_key=api_key)
+                        table_data = generate_principles_table(
+                            selected_fams, cloud_name, cloud_key, agent=agent5)
+                    except Exception:
+                        table_data = generate_principles_table(
+                            selected_fams, cloud_name, cloud_key, agent=None)
+                    st.session_state.a5_principles_table_data = table_data
+                st.rerun()
+
+            table_data = st.session_state.a5_principles_table_data
+
+            if table_data:
+                # Render as styled table
+                st.markdown(
+                    "<table style='width:100%;border-collapse:collapse;font-size:0.85rem;'>"
+                    "<thead><tr style='background:#1E3A8A;color:white;'>"
+                    "<th style='padding:10px 12px;text-align:left;border:1px solid #3B82F6;'>OS Family</th>"
+                    "<th style='padding:10px 12px;text-align:left;border:1px solid #3B82F6;'>Cloud Target</th>"
+                    "<th style='padding:10px 12px;text-align:left;border:1px solid #3B82F6;'>OS Upgrade Principle</th>"
+                    "<th style='padding:10px 12px;text-align:left;border:1px solid #3B82F6;'>OS Replacement Principle</th>"
+                    "</tr></thead><tbody>",
+                    unsafe_allow_html=True)
+
+                row_colors = ["#F8FAFC", "#EFF6FF"]
+                for i, row in enumerate(table_data):
+                    bg = row_colors[i % 2]
+                    # Color-code upgrade vs replacement
+                    upg = row.get("upgrade_principle", "")
+                    repl = row.get("replacement_principle", "")
+                    upg_color = "#166534" if "COTS" in upg else ("#92400E" if "None" in upg else "#1E40AF")
+                    repl_color = "#7C2D12" if "Mandatory" in repl else "#4338CA"
+
+                    st.markdown(
+                        f"<tr style='background:{bg};'>"
+                        f"<td style='padding:8px 12px;border:1px solid #E2E8F0;font-weight:600;'>"
+                        f"{row.get('os_family', '')}</td>"
+                        f"<td style='padding:8px 12px;border:1px solid #E2E8F0;color:#1D4ED8;'>"
+                        f"{row.get('cloud_target', '')}</td>"
+                        f"<td style='padding:8px 12px;border:1px solid #E2E8F0;color:{upg_color};'>"
+                        f"{upg}</td>"
+                        f"<td style='padding:8px 12px;border:1px solid #E2E8F0;color:{repl_color};'>"
+                        f"{repl}</td>"
+                        f"</tr>",
+                        unsafe_allow_html=True)
+
+                st.markdown("</tbody></table>", unsafe_allow_html=True)
+
+                # Store in context for the policy chat
+                st.session_state.a5_context["os_principles_table"] = json.dumps(table_data)
+
+                st.divider()
+
+                # Summary metrics
+                mc1, mc2, mc3 = st.columns(3)
+                with mc1:
+                    st.metric("OS Families in Scope", len(table_data))
+                with mc2:
+                    upgrade_count = sum(1 for r in table_data if "Upgrade" in r.get("upgrade_principle", "") or "COTS" in r.get("upgrade_principle", ""))
+                    st.metric("Upgrade Paths", upgrade_count)
+                with mc3:
+                    replace_count = sum(1 for r in table_data if "Replace" in r.get("replacement_principle", "") or "Mandatory" in r.get("replacement_principle", ""))
+                    st.metric("Replacement Candidates", replace_count)
+
+                st.divider()
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("✅ Accept Principles → Proceed to Policy Chat",
+                                 type="primary", use_container_width=True):
+                        st.session_state.a5_status = "chatting"
+                        st.rerun()
+                with col2:
+                    if st.button("🔄 Regenerate with AI", use_container_width=True):
+                        st.session_state.pop("a5_principles_table_data", None)
+                        st.rerun()
+            else:
+                st.warning("No OS families selected. Go back to the Landscape Survey.")
+                if st.button("⬅️ Back to Landscape Survey"):
+                    st.session_state.a5_status = "landscape"
                     st.rerun()
 
         # ── PHASE 1: CHAT ─────────────────────────────────────────────────────
