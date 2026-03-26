@@ -1635,17 +1635,196 @@ if _show_strategist:
                     replace_count = sum(1 for r in table_data if "Replace" in r.get("replacement_principle", "") or "Migrate" in r.get("replacement_principle", ""))
                     st.metric("Modernization Candidates", replace_count)
 
+                # ══════════════════════════════════════════════════════════════
+                # COST ESTIMATOR
+                # ══════════════════════════════════════════════════════════════
+                from agents.agent_analysis import get_cost_estimates
+                costed_data = get_cost_estimates([dict(r) for r in table_data])
+
                 st.divider()
-                col1, col2 = st.columns(2)
-                with col1:
-                    if st.button("✅ Accept Principles → Proceed to Policy Chat",
-                                 type="primary", use_container_width=True):
-                        st.session_state.a5_status = "chatting"
-                        st.rerun()
-                with col2:
-                    if st.button("🔄 Regenerate with AI", use_container_width=True):
-                        st.session_state.pop("a5_principles_table_data", None)
-                        st.rerun()
+                st.markdown("""<div style='background:#FFF7ED;border:1px solid #FED7AA;border-radius:8px;
+                    padding:0.8rem 1rem;margin-bottom:0.8rem;'>
+                    <h4 style='margin:0;color:#92400E;'>💰 Cost Estimator — Upgrade vs Replace vs Do Nothing</h4>
+                    <small style='color:#78716C;'>Approximate TCO per unit. Actual costs vary by environment complexity.</small>
+                </div>""", unsafe_allow_html=True)
+
+                st.markdown(
+                    "<table style='width:100%;border-collapse:collapse;font-size:0.8rem;'>"
+                    "<thead><tr style='background:#92400E;color:white;'>"
+                    "<th style='padding:8px;border:1px solid #FED7AA;'>Technology</th>"
+                    "<th style='padding:8px;border:1px solid #FED7AA;'>Category</th>"
+                    "<th style='padding:8px;border:1px solid #FED7AA;'>💚 Upgrade Cost</th>"
+                    "<th style='padding:8px;border:1px solid #FED7AA;'>🔵 Replace Cost</th>"
+                    "<th style='padding:8px;border:1px solid #FED7AA;'>🔴 Do Nothing (Annual)</th>"
+                    "<th style='padding:8px;border:1px solid #FED7AA;'>Unit</th>"
+                    "</tr></thead><tbody>", unsafe_allow_html=True)
+
+                for i, row in enumerate(costed_data):
+                    bg = "#FFFBEB" if i % 2 == 0 else "#FFF7ED"
+                    tech = row.get("technology", row.get("os_family", ""))
+                    st.markdown(
+                        f"<tr style='background:{bg};'>"
+                        f"<td style='padding:6px 8px;border:1px solid #FDE68A;font-weight:600;'>{tech}</td>"
+                        f"<td style='padding:6px 8px;border:1px solid #FDE68A;'>{row.get('category','')}</td>"
+                        f"<td style='padding:6px 8px;border:1px solid #FDE68A;color:#166534;'>{row.get('cost_upgrade','')}</td>"
+                        f"<td style='padding:6px 8px;border:1px solid #FDE68A;color:#1D4ED8;'>{row.get('cost_replace','')}</td>"
+                        f"<td style='padding:6px 8px;border:1px solid #FDE68A;color:#DC2626;'>{row.get('cost_do_nothing','')}</td>"
+                        f"<td style='padding:6px 8px;border:1px solid #FDE68A;'>{row.get('cost_unit','')}</td>"
+                        f"</tr>", unsafe_allow_html=True)
+                st.markdown("</tbody></table>", unsafe_allow_html=True)
+
+                # ══════════════════════════════════════════════════════════════
+                # MIGRATION WAVE PLANNER
+                # ══════════════════════════════════════════════════════════════
+                from agents.agent_analysis import assign_migration_waves
+
+                st.divider()
+                st.markdown("""<div style='background:#EFF6FF;border:1px solid #93C5FD;border-radius:8px;
+                    padding:0.8rem 1rem;margin-bottom:0.8rem;'>
+                    <h4 style='margin:0;color:#1E3A8A;'>🌊 Migration Wave Planner</h4>
+                    <small style='color:#64748B;'>Technologies grouped by urgency into migration waves with timeline estimates.</small>
+                </div>""", unsafe_allow_html=True)
+
+                wave_data = assign_migration_waves(
+                    table_data,
+                    os_df=st.session_state.os_df, db_df=st.session_state.db_df,
+                    ws_df=st.session_state.ws_df, as_df=st.session_state.as_df,
+                    fw_df=st.session_state.fw_df)
+
+                wave_colors_ui = {
+                    1: ("#DC2626", "#FEE2E2", "🔴"), 2: ("#EA580C", "#FFEDD5", "🟠"),
+                    3: ("#CA8A04", "#FEF9C3", "🟡"), 4: ("#16A34A", "#DCFCE7", "🟢"),
+                }
+                for w in [1, 2, 3, 4]:
+                    items = [r for r in wave_data if r.get("wave") == w]
+                    if not items:
+                        continue
+                    color, bg, icon = wave_colors_ui[w]
+                    wave_name = items[0].get("wave_name", f"Wave {w}")
+                    timeline = items[0].get("timeline", "")
+
+                    st.markdown(
+                        f"<div style='background:{bg};border-left:4px solid {color};border-radius:0 8px 8px 0;"
+                        f"padding:0.6rem 1rem;margin-bottom:0.5rem;'>"
+                        f"<strong style='color:{color};'>{icon} {wave_name}</strong>"
+                        f"<span style='float:right;color:{color};font-weight:600;'>{timeline}</span>"
+                        f"<br><span style='font-size:0.82rem;color:#374151;'>"
+                        + " · ".join(f"<b>{r.get('technology', r.get('os_family',''))}</b> ({r.get('category','')})" for r in items)
+                        + f"</span></div>", unsafe_allow_html=True)
+
+                # Wave summary metrics
+                wm1, wm2, wm3, wm4 = st.columns(4)
+                with wm1: st.metric("🔴 Wave 1 (Critical)", sum(1 for r in wave_data if r.get("wave")==1))
+                with wm2: st.metric("🟠 Wave 2 (High)", sum(1 for r in wave_data if r.get("wave")==2))
+                with wm3: st.metric("🟡 Wave 3 (Plan)", sum(1 for r in wave_data if r.get("wave")==3))
+                with wm4: st.metric("🟢 Wave 4 (Monitor)", sum(1 for r in wave_data if r.get("wave")==4))
+
+                # ══════════════════════════════════════════════════════════════
+                # DEPENDENCY MAPPING
+                # ══════════════════════════════════════════════════════════════
+                from agents.agent_analysis import generate_dependency_map
+
+                st.divider()
+                st.markdown("""<div style='background:#F0FDF4;border:1px solid #A7F3D0;border-radius:8px;
+                    padding:0.8rem 1rem;margin-bottom:0.8rem;'>
+                    <h4 style='margin:0;color:#065F46;'>🔗 Dependency Mapping</h4>
+                    <small style='color:#64748B;'>Technologies that must move together due to runtime dependencies.</small>
+                </div>""", unsafe_allow_html=True)
+
+                dep_data = generate_dependency_map(table_data)
+                if dep_data:
+                    for dep in dep_data:
+                        deps_text = " → ".join(
+                            f"**{d['technology']}** ({d['category']})" for d in dep.get("depends_on", []))
+                        st.markdown(
+                            f"<div style='background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;"
+                            f"padding:0.5rem 0.8rem;margin-bottom:0.4rem;font-size:0.82rem;'>"
+                            f"⚙️ <strong>{dep['source']}</strong> ({dep['source_category']}) "
+                            f"<span style='color:#6B7280;'>depends on</span> {deps_text}"
+                            f"<br><small style='color:#9CA3AF;'>{dep.get('note','')}</small>"
+                            f"</div>", unsafe_allow_html=True)
+                else:
+                    st.info("No cross-layer dependencies detected in the current selection.")
+
+                # ══════════════════════════════════════════════════════════════
+                # COMPLIANCE CROSSWALK
+                # ══════════════════════════════════════════════════════════════
+                from agents.agent_analysis import generate_compliance_crosswalk
+
+                st.divider()
+                st.markdown("""<div style='background:#FEF2F2;border:1px solid #FECACA;border-radius:8px;
+                    padding:0.8rem 1rem;margin-bottom:0.8rem;'>
+                    <h4 style='margin:0;color:#991B1B;'>🛡️ Compliance Crosswalk</h4>
+                    <small style='color:#64748B;'>EOL status mapped against PCI DSS, HIPAA, SOX, NIST, ISO 27001.</small>
+                </div>""", unsafe_allow_html=True)
+
+                compliance_data = generate_compliance_crosswalk(wave_data)
+                violations = [r for r in compliance_data if r.get("compliance_status") == "VIOLATION"]
+                at_risk = [r for r in compliance_data if r.get("compliance_status") == "WARNING"]
+                compliant_items = [r for r in compliance_data if r.get("compliance_status") == "COMPLIANT"]
+
+                cc1, cc2, cc3 = st.columns(3)
+                with cc1: st.metric("❌ Violations", len(violations))
+                with cc2: st.metric("⚠️ At Risk", len(at_risk))
+                with cc3: st.metric("✅ Compliant", len(compliant_items))
+
+                if violations:
+                    for v in violations:
+                        frameworks = " · ".join(
+                            f"**{cv['framework']}** ({cv['status']})" for cv in v.get("compliance_violations", []))
+                        st.markdown(
+                            f"<div style='background:#FEE2E2;border-left:4px solid #DC2626;border-radius:0 6px 6px 0;"
+                            f"padding:0.4rem 0.8rem;margin-bottom:0.3rem;font-size:0.82rem;'>"
+                            f"❌ <strong>{v.get('technology', v.get('os_family',''))}</strong> ({v.get('category','')}) "
+                            f"— {frameworks}</div>", unsafe_allow_html=True)
+
+                if at_risk:
+                    with st.expander(f"⚠️ {len(at_risk)} technologies at risk", expanded=False):
+                        for w in at_risk:
+                            frameworks = " · ".join(
+                                f"{cw['framework']}" for cw in w.get("compliance_warnings", []))
+                            st.markdown(f"- **{w.get('technology','')}** ({w.get('category','')}) — approaching: {frameworks}")
+
+                # ══════════════════════════════════════════════════════════════
+                # POWERPOINT EXPORT
+                # ══════════════════════════════════════════════════════════════
+                from agents.agent_analysis import generate_pptx
+
+                st.divider()
+                try:
+                    pptx_bytes = generate_pptx(
+                        table_data, wave_data, compliance_data, dep_data,
+                        cloud_name, selected_fams)
+                    pptx_fname = f"Migration_Strategy_{datetime.now().strftime('%Y%m%d_%H%M')}.pptx"
+
+                    dl1, dl2, dl3 = st.columns(3)
+                    with dl1:
+                        st.download_button(
+                            "📊 Download PowerPoint Deck",
+                            data=pptx_bytes, file_name=pptx_fname,
+                            mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                            use_container_width=True, type="primary")
+                    with dl2:
+                        if st.button("✅ Accept → Proceed to Policy Chat",
+                                     use_container_width=True):
+                            st.session_state.a5_status = "chatting"
+                            st.rerun()
+                    with dl3:
+                        if st.button("🔄 Regenerate with AI", use_container_width=True):
+                            st.session_state.pop("a5_principles_table_data", None)
+                            st.rerun()
+                except Exception as e:
+                    st.warning(f"PowerPoint export requires python-pptx: `pip install python-pptx` ({e})")
+                    dl1, dl2 = st.columns(2)
+                    with dl1:
+                        if st.button("✅ Accept → Proceed to Policy Chat",
+                                     type="primary", use_container_width=True):
+                            st.session_state.a5_status = "chatting"
+                            st.rerun()
+                    with dl2:
+                        if st.button("🔄 Regenerate with AI", use_container_width=True):
+                            st.session_state.pop("a5_principles_table_data", None)
+                            st.rerun()
             else:
                 st.warning("No OS families selected. Go back to the Landscape Survey.")
                 if st.button("⬅️ Back to Landscape Survey"):

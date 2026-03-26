@@ -295,6 +295,390 @@ def generate_principles_table(selected_families, cloud_name, cloud_key,
     return rows
 
 
+# =============================================================================
+# FEATURE: Migration Wave Planner
+# =============================================================================
+def assign_migration_waves(table_data, os_df=None, db_df=None, ws_df=None, as_df=None, fw_df=None):
+    """Assign each technology to a migration wave based on risk scores and EOL dates."""
+    waves = []
+    # Build risk lookup from all dataframes
+    risk_lookup = {}
+    for df, name_col in [
+        (os_df, "OS Version"), (db_df, "Database"), (ws_df, "Web Server"),
+        (as_df, "App Server"), (fw_df, "Framework")
+    ]:
+        if df is None or df.empty or name_col not in df.columns:
+            continue
+        for _, row in df.iterrows():
+            key = str(row.get(name_col, ""))
+            risk_lookup[key] = {
+                "risk_score": row.get("Risk Score", 50),
+                "risk_level": row.get("Risk Level", "MEDIUM"),
+                "days_eol": row.get("Days Until EOL", 999),
+                "status": row.get("Status", "Supported"),
+            }
+
+    for item in table_data:
+        tech = item.get("technology", item.get("os_family", ""))
+        cat = item.get("category", "OS")
+
+        # Find best match in risk lookup
+        best_risk = None
+        for key, data in risk_lookup.items():
+            if tech.lower() in key.lower() or key.lower() in tech.lower():
+                if best_risk is None or data["risk_score"] > best_risk["risk_score"]:
+                    best_risk = data
+
+        if best_risk is None:
+            best_risk = {"risk_score": 50, "risk_level": "MEDIUM", "days_eol": 999, "status": "Supported"}
+
+        # Assign wave
+        score = best_risk["risk_score"]
+        days = best_risk["days_eol"] if best_risk["days_eol"] is not None else 999
+        status = str(best_risk.get("status", "")).lower()
+
+        if score >= 75 or days < 0 or status == "end of life":
+            wave = 1; wave_name = "Wave 1: Critical EOL"; timeline = "0–6 months"; urgency = "CRITICAL"
+        elif score >= 50 or (0 <= days <= 365) or status == "expiring soon":
+            wave = 2; wave_name = "Wave 2: High Risk"; timeline = "6–12 months"; urgency = "HIGH"
+        elif score >= 30 or (365 < days <= 730):
+            wave = 3; wave_name = "Wave 3: Plan Ahead"; timeline = "12–18 months"; urgency = "MEDIUM"
+        else:
+            wave = 4; wave_name = "Wave 4: Monitor"; timeline = "18–24 months"; urgency = "LOW"
+
+        waves.append({
+            **item,
+            "wave": wave, "wave_name": wave_name,
+            "timeline": timeline, "urgency": urgency,
+            "risk_score": best_risk["risk_score"],
+            "days_eol": days,
+        })
+
+    return sorted(waves, key=lambda x: (x["wave"], -x["risk_score"]))
+
+
+# =============================================================================
+# FEATURE: Dependency Mapping
+# =============================================================================
+COMMON_DEPENDENCIES = [
+    # (app_server/framework, typical_os, typical_db, note)
+    ("Tomcat", "RHEL/Clone Family", "PostgreSQL", "Java servlet container commonly on RHEL with PostgreSQL/MySQL"),
+    ("Tomcat", "Windows Family", "SQL Server", "Java on Windows typically backed by SQL Server"),
+    ("JBoss/WildFly", "RHEL/Clone Family", "Oracle", "Enterprise Java on RHEL often paired with Oracle DB"),
+    ("WebSphere", "RHEL/Clone Family", "IBM Db2", "IBM stack: WAS + RHEL + Db2"),
+    ("WebSphere", "Windows Family", "SQL Server", "WebSphere on Windows with SQL Server"),
+    ("IIS", "Windows Family", "SQL Server", ".NET/IIS stack requires Windows + SQL Server"),
+    (".NET", "Windows Family", "SQL Server", ".NET Framework requires Windows; .NET 8 can run on Linux"),
+    ("Spring Boot", "RHEL/Clone Family", "PostgreSQL", "Spring Boot commonly deployed on Linux with PostgreSQL"),
+    ("Django", "Debian/Ubuntu Family", "PostgreSQL", "Django + Ubuntu + PostgreSQL is the standard Python stack"),
+    ("PHP", "Debian/Ubuntu Family", "MySQL", "LAMP/LEMP stack: Linux + Nginx/Apache + MySQL + PHP"),
+    ("Node.js", "Debian/Ubuntu Family", "MongoDB", "MERN/MEAN stack: Node.js + MongoDB on Ubuntu"),
+    ("Kafka", "RHEL/Clone Family", None, "Kafka runs on Linux; ZooKeeper dependency removed in KRaft mode"),
+    ("Kubernetes", "Debian/Ubuntu Family", None, "K8s nodes typically run Ubuntu or container-optimized OS"),
+    ("Nginx", "Debian/Ubuntu Family", None, "Nginx commonly deployed on Ubuntu/Debian"),
+    ("Apache", "RHEL/Clone Family", None, "Apache httpd commonly on RHEL-based systems"),
+    ("React", None, None, "Frontend framework — deployed via CDN, no OS/DB dependency at runtime"),
+    ("Angular", None, None, "Frontend framework — deployed via CDN, no OS/DB dependency at runtime"),
+    ("Vue.js", None, None, "Frontend framework — deployed via CDN, no OS/DB dependency at runtime"),
+]
+
+def generate_dependency_map(table_data):
+    """Generate dependency chains showing which technologies must move together."""
+    deps = []
+    techs = {r.get("technology", r.get("os_family", "")).lower(): r for r in table_data}
+
+    for app, os_fam, db, note in COMMON_DEPENDENCIES:
+        app_match = None
+        for key, item in techs.items():
+            if app.lower() in key.lower():
+                app_match = item
+                break
+        if not app_match:
+            continue
+
+        chain = {"source": app_match.get("technology", app),
+                 "source_category": app_match.get("category", ""),
+                 "depends_on": [], "note": note}
+
+        if os_fam:
+            for key, item in techs.items():
+                if os_fam.lower().split("/")[0].lower() in key.lower() or key in os_fam.lower():
+                    chain["depends_on"].append({
+                        "technology": item.get("technology", os_fam),
+                        "category": "OS", "type": "runs_on"})
+                    break
+
+        if db:
+            for key, item in techs.items():
+                if db.lower() in key.lower():
+                    chain["depends_on"].append({
+                        "technology": item.get("technology", db),
+                        "category": "Database", "type": "uses_db"})
+                    break
+
+        if chain["depends_on"]:
+            deps.append(chain)
+
+    return deps
+
+
+# =============================================================================
+# FEATURE: Cost Estimator
+# =============================================================================
+COST_ESTIMATES = {
+    # technology_keyword: (upgrade_cost_per_unit, replace_cost_per_unit, do_nothing_annual, unit)
+    "Windows": ("$2K–5K/server (in-place upgrade)", "$15K–30K/server (re-platform to Linux)", "$200–400/server/yr ESU", "server"),
+    "RHEL": ("$500–1K/server (minor version)", "$3K–8K/server (distro migration)", "$800–1.3K/server/yr subscription", "server"),
+    "Ubuntu": ("$200–500/server (LTS upgrade)", "$3K–8K/server (distro migration)", "$500/server/yr Ubuntu Pro", "server"),
+    "SUSE": ("$500–1K/server (SP upgrade)", "$5K–10K/server (migration)", "$1K–2K/server/yr subscription", "server"),
+    "Legacy Unix": ("N/A (no upgrade path)", "$50K–200K/system (re-platform)", "$10K–50K/system/yr maintenance", "system"),
+    "BSD": ("$200–500/server", "$5K–15K/server (migration)", "$1K–3K/server/yr", "server"),
+    "Apple": ("$0 (free OS upgrade)", "$3K–5K/device (EC2 Mac)", "$0 (included with hardware)", "device"),
+    "SQL Server": ("$5K–15K/instance (version upgrade)", "$20K–50K/instance (cloud migration)", "$1.4K/core/yr ESU", "instance"),
+    "Oracle": ("$10K–30K/instance (patch set)", "$30K–100K/instance (PostgreSQL migration)", "22% of license/yr support", "instance"),
+    "PostgreSQL": ("$1K–3K/instance (version upgrade)", "$5K–15K/instance (managed cloud)", "$0 (community) or $2K/yr", "instance"),
+    "MySQL": ("$1K–3K/instance", "$5K–15K/instance (Aurora)", "$2K–5K/yr Enterprise", "instance"),
+    "MongoDB": ("$2K–5K/instance", "$5K–20K/instance (Atlas)", "$3K–10K/yr Enterprise", "instance"),
+    "Db2": ("$5K–15K/instance", "$30K–80K/instance (PostgreSQL)", "$15K–30K/yr maintenance", "instance"),
+    "IIS": ("$0 (included with Windows)", "$5K–15K (Nginx/cloud ALB)", "$0 (Windows license)", "server"),
+    "Nginx": ("$0 (free upgrade)", "$3K–8K (cloud ALB)", "$0 (OSS) or $2.5K/yr Plus", "server"),
+    "Apache": ("$0 (free upgrade)", "$3K–8K (cloud ALB/Nginx)", "$0 (OSS)", "server"),
+    "Tomcat": ("$1K–3K/instance (version)", "$5K–15K/instance (containerize)", "$0 (OSS)", "instance"),
+    "JBoss": ("$3K–8K/instance", "$10K–25K/instance (Quarkus)", "$5K–15K/yr subscription", "instance"),
+    "WebSphere": ("$5K–15K/instance (Liberty)", "$15K–40K/instance (re-platform)", "$10K–25K/yr license", "instance"),
+    "Kafka": ("$2K–5K/cluster", "$5K–20K (managed MSK/Confluent)", "$0 (OSS) or $10K/yr", "cluster"),
+    "RabbitMQ": ("$1K–3K/cluster", "$3K–10K (managed)", "$0 (OSS)", "cluster"),
+    "Kubernetes": ("$1K–3K/cluster (version)", "$5K–15K (managed EKS/GKE)", "$0 (OSS)", "cluster"),
+    ".NET": ("$2K–8K/app (framework upgrade)", "$10K–40K/app (containerize)", "$0–5K/yr", "application"),
+    "Spring Boot": ("$2K–5K/app (version upgrade)", "$5K–20K/app (microservices)", "$0 (OSS)", "application"),
+    "PHP": ("$1K–3K/app", "$5K–15K/app (containerize)", "$0 (OSS)", "application"),
+    "React": ("$1K–3K/app (version upgrade)", "$2K–8K/app (SSR/CDN)", "$0 (OSS)", "application"),
+    "Angular": ("$1K–3K/app", "$3K–10K/app (rewrite)", "$0 (OSS)", "application"),
+    "Node.js": ("$1K–3K/app", "$3K–10K/app (serverless)", "$0 (OSS)", "application"),
+    "Java": ("$1K–3K/app (LTS upgrade)", "$5K–15K/app (GraalVM native)", "$0 (OpenJDK)", "application"),
+    "Python": ("$500–2K/app", "$3K–10K/app (containerize)", "$0 (OSS)", "application"),
+    "Django": ("$1K–3K/app", "$5K–15K/app (containerize)", "$0 (OSS)", "application"),
+    "Vue.js": ("$1K–2K/app", "$2K–5K/app (Nuxt SSR)", "$0 (OSS)", "application"),
+    "Rails": ("$2K–5K/app", "$5K–20K/app (containerize)", "$0 (OSS)", "application"),
+}
+
+def get_cost_estimates(table_data):
+    """Add cost estimate columns to each principle row."""
+    result = []
+    for item in table_data:
+        tech = item.get("technology", item.get("os_family", ""))
+        costs = None
+        for key, vals in COST_ESTIMATES.items():
+            if key.lower() in tech.lower():
+                costs = vals
+                break
+        if costs:
+            item["cost_upgrade"] = costs[0]
+            item["cost_replace"] = costs[1]
+            item["cost_do_nothing"] = costs[2]
+            item["cost_unit"] = costs[3]
+        else:
+            item["cost_upgrade"] = "Contact vendor"
+            item["cost_replace"] = "Custom estimate required"
+            item["cost_do_nothing"] = "Varies"
+            item["cost_unit"] = "unit"
+        result.append(item)
+    return result
+
+
+# =============================================================================
+# FEATURE: Compliance Crosswalk
+# =============================================================================
+COMPLIANCE_RULES = {
+    "PCI DSS 4.0": {
+        "description": "Payment Card Industry — requires all system components to be patched and supported",
+        "eol_max_days": 0,  # No EOL software allowed
+        "rule": "Req 6.3.3: All software must have active vendor security patches",
+    },
+    "HIPAA": {
+        "description": "Health Insurance Portability — requires reasonable security safeguards",
+        "eol_max_days": 90,  # 90-day grace period for patching
+        "rule": "§164.312(a)(2)(iv): Encryption + patch management for ePHI systems",
+    },
+    "SOX (IT Controls)": {
+        "description": "Sarbanes-Oxley — financial reporting system integrity",
+        "eol_max_days": 180,  # 6-month remediation window
+        "rule": "Section 404: IT general controls must ensure system reliability",
+    },
+    "NIST 800-53": {
+        "description": "Federal information systems — strict patch management",
+        "eol_max_days": 30,
+        "rule": "SI-2: Flaw Remediation — critical patches within 30 days",
+    },
+    "ISO 27001": {
+        "description": "Information security management — risk-based approach",
+        "eol_max_days": 365,  # Risk-based; must have compensating controls
+        "rule": "A.12.6.1: Technical vulnerability management within risk tolerance",
+    },
+}
+
+def generate_compliance_crosswalk(wave_data):
+    """Map each technology's EOL status against compliance frameworks."""
+    crosswalk = []
+    for item in wave_data:
+        days = item.get("days_eol", 999)
+        if days is None:
+            days = 999
+        violations = []
+        warnings = []
+
+        for framework, rules in COMPLIANCE_RULES.items():
+            max_days = rules["eol_max_days"]
+            if days < 0:
+                # Already EOL
+                violations.append({"framework": framework, "status": "VIOLATION",
+                                    "detail": f"EOL {abs(int(days))}d ago — {rules['rule']}"})
+            elif days <= max_days:
+                violations.append({"framework": framework, "status": "AT RISK",
+                                    "detail": f"EOL in {int(days)}d — within {framework} remediation window"})
+            elif days <= max_days + 180:
+                warnings.append({"framework": framework, "status": "MONITOR",
+                                  "detail": f"EOL in {int(days)}d — approaching {framework} threshold"})
+
+        crosswalk.append({
+            **item,
+            "compliance_violations": violations,
+            "compliance_warnings": warnings,
+            "compliance_status": "VIOLATION" if violations else ("WARNING" if warnings else "COMPLIANT"),
+        })
+    return crosswalk
+
+
+# =============================================================================
+# FEATURE: PowerPoint Export
+# =============================================================================
+def generate_pptx(table_data, wave_data, compliance_data, dep_data, cloud_name, selected_families):
+    """Generate a PowerPoint presentation from the analysis data."""
+    from pptx import Presentation
+    from pptx.util import Inches, Pt, Emu
+    from pptx.dml.color import RGBColor
+    from pptx.enum.text import PP_ALIGN
+    import io
+
+    prs = Presentation()
+    prs.slide_width = Inches(13.333)
+    prs.slide_height = Inches(7.5)
+
+    # ── Slide 1: Title ───────────────────────────────────────────────────────
+    slide = prs.slides.add_slide(prs.slide_layouts[6])  # Blank
+    bg = slide.background.fill
+    bg.solid(); bg.fore_color.rgb = RGBColor(0x00, 0x1F, 0x5B)
+
+    txBox = slide.shapes.add_textbox(Inches(1), Inches(2), Inches(11), Inches(3))
+    tf = txBox.text_frame
+    p = tf.paragraphs[0]
+    p.text = "Migration Modernization Strategy"
+    p.font.size = Pt(36); p.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF); p.font.bold = True
+    p2 = tf.add_paragraph()
+    p2.text = f"Cloud Target: {cloud_name} · OS Families: {', '.join(selected_families)}"
+    p2.font.size = Pt(18); p2.font.color.rgb = RGBColor(0xBF, 0xDB, 0xFE)
+    p3 = tf.add_paragraph()
+    p3.text = f"Project: Apr 2026 → Jun 2028 · Generated: {datetime.now().strftime('%d %b %Y')}"
+    p3.font.size = Pt(14); p3.font.color.rgb = RGBColor(0x93, 0xC5, 0xFD)
+
+    # ── Slide 2: Guiding Principles Table ────────────────────────────────────
+    cat_order = ["OS", "Database", "Web Server", "App Server", "Framework"]
+    for cat in cat_order:
+        cat_rows = [r for r in table_data if r.get("category", "OS") == cat]
+        if not cat_rows:
+            continue
+        slide = prs.slides.add_slide(prs.slide_layouts[6])
+        title = slide.shapes.add_textbox(Inches(0.5), Inches(0.3), Inches(12), Inches(0.6))
+        title.text_frame.paragraphs[0].text = f"{cat} — Guiding Principles"
+        title.text_frame.paragraphs[0].font.size = Pt(24); title.text_frame.paragraphs[0].font.bold = True
+
+        cols_count = 4
+        rows_count = len(cat_rows) + 1
+        tbl = slide.shapes.add_table(rows_count, cols_count, Inches(0.5), Inches(1.1),
+                                      Inches(12.3), Inches(min(rows_count * 0.6, 5.5))).table
+
+        headers = ["Technology", "Cloud Target", "Upgrade Principle", "Replacement Principle"]
+        for j, h in enumerate(headers):
+            cell = tbl.cell(0, j)
+            cell.text = h
+            for p in cell.text_frame.paragraphs:
+                p.font.size = Pt(11); p.font.bold = True; p.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+            cell.fill.solid(); cell.fill.fore_color.rgb = RGBColor(0x1E, 0x3A, 0x8A)
+
+        for i, row in enumerate(cat_rows):
+            vals = [row.get("technology", ""), row.get("cloud_target", ""),
+                    row.get("upgrade_principle", ""), row.get("replacement_principle", "")]
+            for j, v in enumerate(vals):
+                cell = tbl.cell(i + 1, j)
+                cell.text = v
+                for p in cell.text_frame.paragraphs:
+                    p.font.size = Pt(9)
+                if i % 2 == 0:
+                    cell.fill.solid(); cell.fill.fore_color.rgb = RGBColor(0xF1, 0xF5, 0xF9)
+
+    # ── Slide 3: Migration Waves ─────────────────────────────────────────────
+    if wave_data:
+        slide = prs.slides.add_slide(prs.slide_layouts[6])
+        title = slide.shapes.add_textbox(Inches(0.5), Inches(0.3), Inches(12), Inches(0.6))
+        title.text_frame.paragraphs[0].text = "Migration Wave Plan"
+        title.text_frame.paragraphs[0].font.size = Pt(24); title.text_frame.paragraphs[0].font.bold = True
+
+        wave_colors = {1: RGBColor(0xDC,0x26,0x26), 2: RGBColor(0xEA,0x58,0x0C),
+                       3: RGBColor(0xCA,0x8A,0x04), 4: RGBColor(0x16,0xA3,0x4A)}
+        y = 1.2
+        for w in [1, 2, 3, 4]:
+            items = [r for r in wave_data if r.get("wave") == w]
+            if not items:
+                continue
+            timeline = items[0].get("timeline", "")
+            wave_name = items[0].get("wave_name", f"Wave {w}")
+
+            box = slide.shapes.add_textbox(Inches(0.5), Inches(y), Inches(12), Inches(0.35))
+            p = box.text_frame.paragraphs[0]
+            p.text = f"{wave_name} ({timeline}) — {len(items)} technologies"
+            p.font.size = Pt(14); p.font.bold = True; p.font.color.rgb = wave_colors.get(w, RGBColor(0,0,0))
+
+            techs = ", ".join(f"{r.get('technology','')} ({r.get('category','')})" for r in items[:8])
+            if len(items) > 8:
+                techs += f" +{len(items)-8} more"
+            box2 = slide.shapes.add_textbox(Inches(0.7), Inches(y + 0.35), Inches(11.5), Inches(0.3))
+            box2.text_frame.paragraphs[0].text = techs
+            box2.text_frame.paragraphs[0].font.size = Pt(10)
+            y += 0.8
+
+    # ── Slide 4: Compliance Summary ──────────────────────────────────────────
+    if compliance_data:
+        slide = prs.slides.add_slide(prs.slide_layouts[6])
+        title = slide.shapes.add_textbox(Inches(0.5), Inches(0.3), Inches(12), Inches(0.6))
+        title.text_frame.paragraphs[0].text = "Compliance Crosswalk Summary"
+        title.text_frame.paragraphs[0].font.size = Pt(24); title.text_frame.paragraphs[0].font.bold = True
+
+        violations = [r for r in compliance_data if r.get("compliance_status") == "VIOLATION"]
+        warnings = [r for r in compliance_data if r.get("compliance_status") == "WARNING"]
+        compliant = [r for r in compliance_data if r.get("compliance_status") == "COMPLIANT"]
+
+        summary_text = (f"Violations: {len(violations)} technologies · "
+                       f"At Risk: {len(warnings)} · Compliant: {len(compliant)}")
+        box = slide.shapes.add_textbox(Inches(0.5), Inches(1.2), Inches(12), Inches(0.5))
+        box.text_frame.paragraphs[0].text = summary_text
+        box.text_frame.paragraphs[0].font.size = Pt(16)
+
+        if violations:
+            y = 2.0
+            for v in violations[:10]:
+                box = slide.shapes.add_textbox(Inches(0.7), Inches(y), Inches(11.5), Inches(0.4))
+                frameworks = ", ".join(cv["framework"] for cv in v.get("compliance_violations", []))
+                box.text_frame.paragraphs[0].text = f"❌ {v.get('technology','')} ({v.get('category','')}) — violates: {frameworks}"
+                box.text_frame.paragraphs[0].font.size = Pt(10)
+                box.text_frame.paragraphs[0].font.color.rgb = RGBColor(0xDC, 0x26, 0x26)
+                y += 0.35
+
+    buf = io.BytesIO()
+    prs.save(buf)
+    buf.seek(0)
+    return buf.getvalue()
+
+
 LANDSCAPE_VERIFY_SYSTEM = """You are Agent 5 — a senior IT migration strategist.
 The user says they have an OS that is not in our tracked list.
 Your job is to determine:
