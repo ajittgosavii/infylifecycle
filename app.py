@@ -1123,10 +1123,11 @@ with tab_a5:
         a5s = st.session_state.get("a5_status", "idle")
 
         # ── Progress stepper ──────────────────────────────────────────────────
-        steps    = ["🗺️ Landscape", "💬 Policy Chat", "⚖️ Principles", "💰 Cost Intel", "🧠 Analysis", "✅ Complete"]
+        steps    = ["🗺️ Landscape", "☁️ Cloud Profile", "💬 Policy Chat", "⚖️ Principles", "💰 Cost Intel", "🧠 Analysis", "✅ Complete"]
         step_map = {"idle":0,"landscape":0,"landscape_other":0,
-                    "chatting":1,"principles":2,"costing":3,
-                    "ready":3,"analysing":4,"done":5}
+                    "cloud_profile":1,"cloud_other":1,
+                    "chatting":2,"principles":3,"costing":4,
+                    "ready":4,"analysing":5,"done":6}
         cur_step = step_map.get(a5s, 0)
         s_cols   = st.columns(len(steps))
         for i, (col, lbl) in enumerate(zip(s_cols, steps)):
@@ -1212,10 +1213,10 @@ with tab_a5:
                 if "Other" in selected:
                     st.session_state.a5_status = "landscape_other"
                 else:
-                    # Store landscape context for the policy chat
+                    # Store landscape context for the cloud profile phase
                     st.session_state.a5_context["os_landscape"] = ", ".join(
                         [f for f in selected if f != "Other"])
-                    st.session_state.a5_status = "chatting"
+                    st.session_state.a5_status = "cloud_profile"
                 st.rerun()
 
         # ── PHASE 0b: OTHER OS HANDLING ──────────────────────────────────────
@@ -1253,10 +1254,10 @@ with tab_a5:
                         f"_{result.get('explanation', '')}_"
                     )
                     st.info("No changes needed. Click below to proceed.")
-                    if st.button("➡️ Proceed to Policy Chat", key="proceed_after_match"):
+                    if st.button("➡️ Proceed to Cloud Profile", key="proceed_after_match"):
                         st.session_state.a5_context["os_landscape"] = ", ".join(
                             [f for f in st.session_state.a5_landscape_selected if f != "Other"])
-                        st.session_state.a5_status = "chatting"
+                        st.session_state.a5_status = "cloud_profile"
                         st.rerun()
 
                 elif result.get("is_valid_os"):
@@ -1325,8 +1326,173 @@ with tab_a5:
             if st.button("⏭️ Skip — Proceed without adding", use_container_width=True):
                 st.session_state.a5_context["os_landscape"] = ", ".join(
                     [f for f in st.session_state.a5_landscape_selected if f != "Other"])
-                st.session_state.a5_status = "chatting"
+                st.session_state.a5_status = "cloud_profile"
                 st.rerun()
+
+        # ── PHASE 0c: CLOUD PROFILE SELECTION ────────────────────────────────
+        elif a5s in ("cloud_profile", "cloud_other"):
+            from agents.agent_analysis import PolicyAnalysisAgent as _PA5
+
+            st.markdown("""
+            <div style="background:linear-gradient(135deg,#EFF6FF,#E0F2FE);
+                        border:1px solid #93C5FD;border-radius:12px;
+                        padding:1.2rem 1.4rem;margin-bottom:1rem;">
+              <h3 style="margin:0 0 0.5rem;color:#1E3A8A;font-size:1.05rem;">
+                ☁️ Cloud Target Profile
+              </h3>
+              <p style="margin:0;color:#374151;font-size:0.88rem;">
+                <strong>Please select the profile that best describes your target environment.</strong><br>
+                This helps Agent 5 tailor migration recommendations to your cloud strategy.
+              </p>
+            </div>""", unsafe_allow_html=True)
+
+            # ── Standard profiles ────────────────────────────────────────────
+            CLOUD_PROFILES = [
+                ("Microsoft-Centric (Azure)",
+                 "🔷",
+                 "Optimized for **Windows Server** (2012–2025) and Active Directory. "
+                 "Leverages Azure Hybrid Benefit to reuse your on-prem licenses.",
+                 "Azure"),
+                ("Linux & Scale (AWS)",
+                 "🟠",
+                 "Optimized for large **RHEL/RPM-based** footprints. "
+                 "Uses Graviton (ARM) processors for 40% better price-performance on modern Linux.",
+                 "AWS"),
+                ("Container & Data (GCP)",
+                 "🔵",
+                 "Optimized for **Ubuntu/Debian** and Kubernetes (GKE). "
+                 "Ideal for high-speed AI data pipelines and global private fiber networking.",
+                 "GCP"),
+                ("Database & Legacy Bridge (Oracle/OCI)",
+                 "🔴",
+                 "The best \"Native Home\" for **Oracle Linux and Solaris**. "
+                 "Offers the most stable path for large Oracle Database backends.",
+                 "OCI"),
+                ("Sovereign-First (US Government / High-Reg)",
+                 "🛡️",
+                 "A **vendor-agnostic, compliance-driven path**. Choose this if your data MUST reside in "
+                 "**FedRAMP High, ITAR, or CJIS** regions (e.g., AWS GovCloud or Azure Government) "
+                 "regardless of which OS is running.",
+                 "GovCloud"),
+            ]
+
+            # Add any custom profiles from previous "Other" additions
+            custom_profiles = st.session_state.get("a5_custom_cloud_profiles", [])
+            all_profiles = CLOUD_PROFILES + custom_profiles
+
+            if a5s == "cloud_profile":
+                with st.form("cloud_profile_form"):
+                    selected_cloud = None
+                    for i, (name, emoji, desc, key) in enumerate(all_profiles):
+                        col1, col2 = st.columns([1, 10])
+                        with col1:
+                            checked = st.checkbox(f"{emoji}", key=f"cp_{key}", value=False)
+                        with col2:
+                            st.markdown(
+                                f"**{name}**  \n"
+                                f"<small style='color:#4B5563;'>{desc}</small>",
+                                unsafe_allow_html=True)
+                        if checked:
+                            selected_cloud = (name, key)
+
+                    # Other option
+                    st.divider()
+                    col1, col2 = st.columns([1, 10])
+                    with col1:
+                        other_checked = st.checkbox("❓", key="cp_other", value=False)
+                    with col2:
+                        st.markdown(
+                            "**Other Cloud Provider**  \n"
+                            "<small style='color:#4B5563;'>Not listed above — I'll describe my cloud target</small>",
+                            unsafe_allow_html=True)
+
+                    st.divider()
+                    submitted = st.form_submit_button(
+                        "✅ Confirm Cloud Profile → Proceed to Policy Chat",
+                        type="primary", use_container_width=True)
+
+                if submitted:
+                    if other_checked:
+                        st.session_state.a5_status = "cloud_other"
+                        st.rerun()
+                    elif selected_cloud:
+                        st.session_state.a5_context["cloud_provider"] = selected_cloud[0]
+                        st.session_state.a5_context["cloud_key"] = selected_cloud[1]
+                        st.session_state.a5_status = "chatting"
+                        st.rerun()
+                    else:
+                        st.warning("Please select at least one cloud profile, or choose Other.")
+
+            # ── "Other" cloud handling ───────────────────────────────────────
+            elif a5s == "cloud_other":
+                st.markdown("""
+                <div style="background:#FFF7ED;border:1px solid #FED7AA;border-radius:12px;
+                            padding:1rem 1.2rem;margin-bottom:1rem;">
+                  <h4 style="margin:0 0 0.4rem;color:#92400E;font-size:0.95rem;">
+                    ❓ Describe your cloud target
+                  </h4>
+                  <p style="margin:0;color:#78716C;font-size:0.82rem;">
+                    Agent 5 will research this provider and create a tailored profile for your selection.
+                  </p>
+                </div>""", unsafe_allow_html=True)
+
+                other_cloud = st.text_input(
+                    "Which cloud provider or environment?",
+                    placeholder="e.g. IBM Cloud, Alibaba Cloud, VMware on-prem, Hybrid multi-cloud...",
+                    key="a5_other_cloud_input"
+                )
+
+                if st.button("🔍 Research & Add Profile", type="primary",
+                             disabled=not (key_ok and other_cloud)):
+                    with st.spinner(f"🧠 Agent 5 researching {other_cloud}..."):
+                        try:
+                            agent5 = PolicyAnalysisAgent(api_key=api_key)
+                            resp = agent5.client.chat.completions.create(
+                                model=agent5.model, max_tokens=400,
+                                messages=[{"role": "user", "content":
+                                    f"Create a brief cloud migration profile for: {other_cloud}\n\n"
+                                    f"Return ONLY JSON:\n"
+                                    f'{{\"name\": \"short profile name\", '
+                                    f'\"emoji\": \"single emoji\", '
+                                    f'\"description\": \"2-sentence description of strengths for OS migration, similar style to Azure/AWS/GCP profiles\", '
+                                    f'\"key\": \"short_key\"}}'
+                                }])
+                            text = resp.choices[0].message.content.strip()
+                            if "```" in text:
+                                text = text.split("```json")[-1].split("```")[0] if "```json" in text \
+                                       else text.split("```")[1].split("```")[0]
+                            s, e = text.find("{"), text.rfind("}")
+                            profile = json.loads(text[s:e+1]) if s != -1 and e > s else None
+                        except Exception:
+                            profile = None
+
+                    if profile:
+                        new_profile = (
+                            profile.get("name", other_cloud),
+                            profile.get("emoji", "☁️"),
+                            profile.get("description", f"Custom profile for {other_cloud}"),
+                            profile.get("key", other_cloud.lower().replace(" ", "_"))
+                        )
+                        custom = st.session_state.get("a5_custom_cloud_profiles", [])
+                        custom.append(new_profile)
+                        st.session_state.a5_custom_cloud_profiles = custom
+
+                        st.success(
+                            f"✅ **{new_profile[0]}** profile created!\n\n"
+                            f"{new_profile[1]} {new_profile[2]}\n\n"
+                            f"Returning to selection so you can choose it."
+                        )
+                        st.session_state.a5_status = "cloud_profile"
+                        import time; time.sleep(2)
+                        st.rerun()
+                    else:
+                        st.error("Could not generate profile. Please try with a more specific cloud name.")
+
+                st.divider()
+                if st.button("⏭️ Skip — Use no specific cloud preference", use_container_width=True):
+                    st.session_state.a5_context["cloud_provider"] = "No strong preference"
+                    st.session_state.a5_status = "chatting"
+                    st.rerun()
 
         # ── PHASE 1: CHAT ─────────────────────────────────────────────────────
         elif a5s in ("chatting",):

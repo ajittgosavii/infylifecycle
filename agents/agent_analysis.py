@@ -265,6 +265,7 @@ class PolicyAnalysisAgent:
             "a5_landscape_families": {},
             "a5_landscape_selected": [],
             "a5_landscape_other_pending": False,
+            "a5_custom_cloud_profiles": [],
         }
         for k, v in defaults.items():
             if k not in st.session_state:
@@ -280,7 +281,7 @@ class PolicyAnalysisAgent:
                   "a5_ws_done","a5_as_done","a5_fw_done",
                   "a5_preflight_done","a5_log",
                   "a5_landscape_families","a5_landscape_selected",
-                  "a5_landscape_other_pending"]:
+                  "a5_landscape_other_pending","a5_custom_cloud_profiles"]:
             st.session_state.pop(k, None)
         PolicyAnalysisAgent.init_session()
 
