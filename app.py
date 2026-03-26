@@ -651,21 +651,21 @@ if run_a2:
 # ── Main content: Tabs OR Strategist ──────────────────────────────────────────
 _show_strategist = st.session_state.get("show_strategist", False)
 
+# ── Tabs ──────────────────────────────────────────────────────────────────────
+tab_dash, tab_os, tab_db, tab_ws, tab_as, tab_fw = st.tabs([
+    "📊 Dashboard", "🖥️ OS Versions", "🗄️ DB Versions",
+    "🌐 Web Servers", "⚙️ App Servers", "📦 Frameworks",
+])
+
 if _show_strategist:
-    # Placeholder tabs (not displayed) to prevent NameError on with-blocks below
-    _placeholder = st.container()
-    with _placeholder:
-        tab_dash, tab_os, tab_db, tab_ws, tab_as, tab_fw = st.tabs([
-            "📊 Dashboard", "🖥️ OS Versions", "🗄️ DB Versions",
-            "🌐 Web Servers", "⚙️ App Servers", "📦 Frameworks",
-        ])
-    _placeholder.empty()  # Hide immediately
-else:
-    # ── Tabs ──────────────────────────────────────────────────────────────────
-    tab_dash, tab_os, tab_db, tab_ws, tab_as, tab_fw = st.tabs([
-        "📊 Dashboard", "🖥️ OS Versions", "🗄️ DB Versions",
-        "🌐 Web Servers", "⚙️ App Servers", "📦 Frameworks",
-    ])
+    # Hide tabs entirely with CSS — Strategist renders below
+    st.markdown("""<style>
+    .stTabs { display: none !important; }
+    </style>""", unsafe_allow_html=True)
+    # Also hide download section when Strategist is open
+    st.markdown("""<style>
+    [data-testid="stDownloadButton"] { display: none !important; }
+    </style>""", unsafe_allow_html=True)
 
 
 # ────────────────── Tab 0: Executive Dashboard ────────────────────────────────
