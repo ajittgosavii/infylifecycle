@@ -105,27 +105,76 @@ DEFAULT_OS_PRINCIPLES = {
     },
 }
 
-PRINCIPLES_TABLE_SYSTEM = f"""You are Agent 5 — a senior IT migration strategist at Infosys.
-Given the user's selected OS families and their chosen cloud provider, generate a guiding
-principles table. For each OS family, provide:
-- The best cloud target (considering the user's preference)
-- An OS Upgrade Principle (for COTS/vendor-supported software)
-- An OS Replacement Principle (for custom/modernized approaches)
+# ── DB Migration Principles ───────────────────────────────────────────────────
+DEFAULT_DB_PRINCIPLES = {
+    "SQL Server":     {"upgrade": "Upgrade to SQL Server 2022 for enhanced security and Azure Hybrid Benefit.", "replace": "Migrate to Azure SQL Managed Instance or AWS RDS for managed operations."},
+    "Oracle":         {"upgrade": "Upgrade to Oracle 19c/23ai for extended premier support.", "replace": "Migrate to PostgreSQL or AWS Aurora PostgreSQL to eliminate licensing costs."},
+    "PostgreSQL":     {"upgrade": "Upgrade to PostgreSQL 16/17 for performance and security.", "replace": "Move to cloud-managed (RDS/Cloud SQL/Azure Flexible) for zero-maintenance operations."},
+    "MySQL":          {"upgrade": "Upgrade to MySQL 8.4 LTS for long-term security patches.", "replace": "Migrate to Aurora MySQL or Cloud SQL for auto-scaling and managed backups."},
+    "MongoDB":        {"upgrade": "Upgrade to MongoDB 7.x/8.x for improved aggregation and security.", "replace": "Move to MongoDB Atlas for fully managed cloud-native operations."},
+    "IBM Db2":        {"upgrade": "Upgrade to Db2 11.5 with latest fix packs for extended support.", "replace": "Migrate to PostgreSQL on cloud for cost reduction and talent availability."},
+    "MariaDB":        {"upgrade": "Upgrade to MariaDB 11.4 LTS for enterprise stability.", "replace": "Consolidate onto Aurora MySQL or Cloud SQL MySQL-compatible for managed ops."},
+}
 
-Be specific, actionable, and reference actual product versions.
+# ── Web Server Migration Principles ──────────────────────────────────────────
+DEFAULT_WS_PRINCIPLES = {
+    "IIS":     {"upgrade": "Upgrade to IIS 10.0 on Windows Server 2022/2025 for HTTP/3 and TLS 1.3.", "replace": "Replace with Nginx or cloud ALB/CDN for static content and reverse proxy."},
+    "Nginx":   {"upgrade": "Upgrade to Nginx 1.26+ stable for latest security patches and HTTP/3.", "replace": "Replace with cloud-native load balancers (ALB/Cloud Load Balancing) for auto-scaling."},
+    "Apache":  {"upgrade": "Upgrade to Apache 2.4.62+ for security patches and mod_http2.", "replace": "Replace with Nginx or cloud-managed API Gateway for modern workloads."},
+}
+
+# ── App Server Migration Principles ──────────────────────────────────────────
+DEFAULT_AS_PRINCIPLES = {
+    "Tomcat":          {"upgrade": "Upgrade to Tomcat 10.1.x (Jakarta EE 10) for modern servlet support.", "replace": "Containerize with Docker/K8s and deploy on cloud-managed EKS/GKE/AKS."},
+    "JBoss/WildFly":   {"upgrade": "Upgrade to JBoss EAP 8.0 or WildFly 33 for Jakarta EE 10.", "replace": "Migrate to Quarkus on Kubernetes for cloud-native microservices."},
+    "WebSphere":       {"upgrade": "Migrate to WebSphere Liberty for lightweight, cloud-ready deployment.", "replace": "Re-platform to Spring Boot or Quarkus on Kubernetes."},
+    "Kafka":           {"upgrade": "Upgrade to Kafka 3.x (KRaft) to eliminate ZooKeeper dependency.", "replace": "Move to managed Kafka (Amazon MSK / Confluent Cloud) for zero-ops."},
+    "RabbitMQ":        {"upgrade": "Upgrade to RabbitMQ 3.13.x for latest security and performance.", "replace": "Migrate to Amazon MQ or CloudAMQP for managed message brokering."},
+    "Kubernetes":      {"upgrade": "Upgrade to K8s 1.31+ and maintain N-2 version policy.", "replace": "Adopt managed K8s (EKS/GKE/AKS) to eliminate control plane management overhead."},
+}
+
+# ── Framework Migration Principles ───────────────────────────────────────────
+DEFAULT_FW_PRINCIPLES = {
+    ".NET":            {"upgrade": "Upgrade to .NET 8 LTS for cross-platform support and performance.", "replace": "Migrate legacy .NET Framework apps to .NET 8 containers on Linux."},
+    "Spring Boot":     {"upgrade": "Upgrade to Spring Boot 3.4.x for Jakarta EE 10 and virtual threads.", "replace": "Refactor monoliths to Spring Cloud microservices on Kubernetes."},
+    "PHP":             {"upgrade": "Upgrade to PHP 8.3/8.4 for JIT compilation and type safety.", "replace": "Containerize PHP-FPM workloads on Kubernetes with auto-scaling."},
+    "React":           {"upgrade": "Upgrade to React 19 for Server Components and Suspense improvements.", "replace": "Deploy on cloud CDN (CloudFront/Cloud CDN) with SSR via serverless functions."},
+    "Angular":         {"upgrade": "Upgrade to Angular 18/19 for signals and improved hydration.", "replace": "Serve via containerized SSR on cloud Kubernetes with edge caching."},
+    "Node.js":         {"upgrade": "Upgrade to Node.js 22 LTS for V8 improvements and security.", "replace": "Deploy on serverless (Lambda/Cloud Functions) for event-driven workloads."},
+    "Java":            {"upgrade": "Upgrade to Java 21 LTS for virtual threads and pattern matching.", "replace": "Adopt GraalVM native images for cloud-optimized startup and memory."},
+    "Python":          {"upgrade": "Upgrade to Python 3.12/3.13 for performance and security patches.", "replace": "Deploy on serverless (Lambda/Cloud Functions) or containerized ML pipelines."},
+    "Django":          {"upgrade": "Upgrade to Django 5.2 LTS for async views and composite PKs.", "replace": "Containerize Django apps on Kubernetes with managed PostgreSQL backend."},
+    "Vue.js":          {"upgrade": "Upgrade to Vue.js 3.x with Composition API for maintainability.", "replace": "Deploy on cloud CDN with SSR via Nuxt.js on serverless."},
+    "Ruby on Rails":   {"upgrade": "Upgrade to Rails 8.0 for Hotwire-first architecture.", "replace": "Containerize on Kubernetes with managed PostgreSQL/Redis backends."},
+}
+
+PRINCIPLES_TABLE_SYSTEM = f"""You are Agent 5 — a senior IT migration strategist at Infosys.
+Given the user's technology landscape and preferred cloud, generate a deep-dive guiding
+principles table covering OS, Database, Web Server, App Server, and Framework categories.
+
+For each item, provide:
+- Category (OS/DB/Web Server/App Server/Framework)
+- Technology name
+- Cloud target (adapted to user's preference)
+- Upgrade Principle (COTS/vendor-supported path)
+- Replacement Principle (modernization/cloud-native path)
+
+Be specific, actionable, and reference actual product versions and cloud services.
 Return ONLY a JSON array:
-[{{"os_family": "...", "cloud_target": "...", "upgrade_principle": "...", "replacement_principle": "..."}}]
+[{{"category": "...", "technology": "...", "cloud_target": "...", "upgrade_principle": "...", "replacement_principle": "..."}}]
 
 Today: {TODAY}. Project ends 30 Jun 2028."""
 
 
-def generate_principles_table(selected_families, cloud_name, cloud_key, agent=None):
+def generate_principles_table(selected_families, cloud_name, cloud_key,
+                               agent=None, db_df=None, ws_df=None, as_df=None, fw_df=None):
     """
-    Generate the guiding principles table.
-    Uses defaults first, then optionally enhances with AI.
-    Returns list of dicts with keys: os_family, cloud_target, upgrade_principle, replacement_principle.
+    Generate the deep-dive guiding principles table covering OS, DB, WS, AS, FW.
+    Returns list of dicts: category, technology, cloud_target, upgrade_principle, replacement_principle.
     """
     rows = []
+
+    # ── OS Families ──────────────────────────────────────────────────────────
     for fam in selected_families:
         if fam == "Other":
             continue
@@ -134,34 +183,99 @@ def generate_principles_table(selected_families, cloud_name, cloud_key, agent=No
             cloud_map = defaults.get("cloud_map", {})
             cloud_target = cloud_map.get(cloud_key, cloud_map.get("_default", cloud_name))
             rows.append({
-                "os_family": fam,
+                "category": "OS",
+                "technology": fam,
                 "cloud_target": cloud_target,
                 "upgrade_principle": defaults["upgrade"],
                 "replacement_principle": defaults["replace"],
             })
-        else:
-            # Unknown family — provide generic
-            rows.append({
-                "os_family": fam,
-                "cloud_target": cloud_name,
-                "upgrade_principle": "Upgrade to the latest supported version to maintain vendor support.",
-                "replacement_principle": "Evaluate containerization or cloud-native alternatives.",
-            })
 
-    # Optionally enhance with AI if agent provided
+    # ── Databases (from live data) ───────────────────────────────────────────
+    if db_df is not None and not db_df.empty:
+        db_names = db_df["Database"].dropna().unique().tolist()
+        for db_name in sorted(set(db_names)):
+            matched = None
+            for key in DEFAULT_DB_PRINCIPLES:
+                if key.lower() in db_name.lower():
+                    matched = DEFAULT_DB_PRINCIPLES[key]
+                    break
+            if matched:
+                rows.append({
+                    "category": "Database",
+                    "technology": db_name,
+                    "cloud_target": cloud_name,
+                    "upgrade_principle": matched["upgrade"],
+                    "replacement_principle": matched["replace"],
+                })
+
+    # ── Web Servers (from live data) ─────────────────────────────────────────
+    if ws_df is not None and not ws_df.empty:
+        ws_names = ws_df["Web Server"].dropna().unique().tolist()
+        for ws_name in sorted(set(ws_names)):
+            matched = None
+            for key in DEFAULT_WS_PRINCIPLES:
+                if key.lower() in ws_name.lower():
+                    matched = DEFAULT_WS_PRINCIPLES[key]
+                    break
+            if matched:
+                rows.append({
+                    "category": "Web Server",
+                    "technology": ws_name,
+                    "cloud_target": cloud_name,
+                    "upgrade_principle": matched["upgrade"],
+                    "replacement_principle": matched["replace"],
+                })
+
+    # ── App Servers (from live data) ─────────────────────────────────────────
+    if as_df is not None and not as_df.empty:
+        as_names = as_df["App Server"].dropna().unique().tolist()
+        for as_name in sorted(set(as_names)):
+            matched = None
+            for key in DEFAULT_AS_PRINCIPLES:
+                if key.lower() in as_name.lower():
+                    matched = DEFAULT_AS_PRINCIPLES[key]
+                    break
+            if matched:
+                rows.append({
+                    "category": "App Server",
+                    "technology": as_name,
+                    "cloud_target": cloud_name,
+                    "upgrade_principle": matched["upgrade"],
+                    "replacement_principle": matched["replace"],
+                })
+
+    # ── Frameworks (from live data) ──────────────────────────────────────────
+    if fw_df is not None and not fw_df.empty:
+        fw_names = fw_df["Framework"].dropna().unique().tolist()
+        for fw_name in sorted(set(fw_names)):
+            matched = None
+            for key in DEFAULT_FW_PRINCIPLES:
+                if key.lower() in fw_name.lower():
+                    matched = DEFAULT_FW_PRINCIPLES[key]
+                    break
+            if matched:
+                rows.append({
+                    "category": "Framework",
+                    "technology": fw_name,
+                    "cloud_target": cloud_name,
+                    "upgrade_principle": matched["upgrade"],
+                    "replacement_principle": matched["replace"],
+                })
+
+    # ── AI Enhancement ───────────────────────────────────────────────────────
     if agent and rows:
         try:
             prompt = (
-                f"User's selected OS families: {', '.join(selected_families)}\n"
-                f"User's preferred cloud: {cloud_name}\n\n"
-                f"Here are the default principles I've prepared:\n"
+                f"User's cloud preference: {cloud_name}\n"
+                f"User's OS families: {', '.join(selected_families)}\n\n"
+                f"Here are the default principles across all categories:\n"
                 + json.dumps(rows, indent=2) +
-                f"\n\nReview and enhance these principles to be more specific to the "
-                f"user's cloud choice ({cloud_name}). Keep the same structure but "
-                f"make recommendations more tailored. Return ONLY the JSON array."
+                f"\n\nEnhance these to be tailored to {cloud_name}. "
+                f"Reference specific {cloud_name} services. Keep the same JSON structure. "
+                f"Return ONLY the JSON array."
             )
             resp = agent.client.chat.completions.create(
-                model=agent.model, max_tokens=2000,
+                model=agent.model, max_tokens=4000,
                 messages=[
                     {"role": "system", "content": PRINCIPLES_TABLE_SYSTEM},
                     {"role": "user", "content": prompt}
@@ -173,10 +287,10 @@ def generate_principles_table(selected_families, cloud_name, cloud_key, agent=No
             s, e = text.find("["), text.rfind("]")
             if s != -1 and e > s:
                 enhanced = json.loads(text[s:e+1])
-                if enhanced and len(enhanced) == len(rows):
+                if enhanced and len(enhanced) >= len(rows) // 2:
                     rows = enhanced
         except Exception:
-            pass  # Keep defaults if AI fails
+            pass
 
     return rows
 

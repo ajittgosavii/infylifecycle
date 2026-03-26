@@ -1539,70 +1539,101 @@ if _show_strategist:
 
             # Generate or use cached table
             if "a5_principles_table_data" not in st.session_state:
-                with st.spinner("🧠 Agent 5 generating tailored guiding principles..."):
+                with st.spinner("🧠 Agent 5 generating deep-dive guiding principles across all categories..."):
                     try:
                         agent5 = PolicyAnalysisAgent(api_key=api_key)
                         table_data = generate_principles_table(
-                            selected_fams, cloud_name, cloud_key, agent=agent5)
+                            selected_fams, cloud_name, cloud_key, agent=agent5,
+                            db_df=st.session_state.db_df,
+                            ws_df=st.session_state.ws_df,
+                            as_df=st.session_state.as_df,
+                            fw_df=st.session_state.fw_df)
                     except Exception:
                         table_data = generate_principles_table(
-                            selected_fams, cloud_name, cloud_key, agent=None)
+                            selected_fams, cloud_name, cloud_key, agent=None,
+                            db_df=st.session_state.db_df,
+                            ws_df=st.session_state.ws_df,
+                            as_df=st.session_state.as_df,
+                            fw_df=st.session_state.fw_df)
                     st.session_state.a5_principles_table_data = table_data
                 st.rerun()
 
             table_data = st.session_state.a5_principles_table_data
 
             if table_data:
-                # Render as styled table
-                st.markdown(
-                    "<table style='width:100%;border-collapse:collapse;font-size:0.85rem;'>"
-                    "<thead><tr style='background:#1E3A8A;color:white;'>"
-                    "<th style='padding:10px 12px;text-align:left;border:1px solid #3B82F6;'>OS Family</th>"
-                    "<th style='padding:10px 12px;text-align:left;border:1px solid #3B82F6;'>Cloud Target</th>"
-                    "<th style='padding:10px 12px;text-align:left;border:1px solid #3B82F6;'>OS Upgrade Principle</th>"
-                    "<th style='padding:10px 12px;text-align:left;border:1px solid #3B82F6;'>OS Replacement Principle</th>"
-                    "</tr></thead><tbody>",
-                    unsafe_allow_html=True)
+                # Group by category for section headers
+                cat_colors = {
+                    "OS": ("#1E3A8A", "🖥️"), "Database": ("#7C2D12", "🗄️"),
+                    "Web Server": ("#065F46", "🌐"), "App Server": ("#4338CA", "⚙️"),
+                    "Framework": ("#831843", "📦"),
+                }
+                cat_order = ["OS", "Database", "Web Server", "App Server", "Framework"]
 
-                row_colors = ["#F8FAFC", "#EFF6FF"]
-                for i, row in enumerate(table_data):
-                    bg = row_colors[i % 2]
-                    # Color-code upgrade vs replacement
-                    upg = row.get("upgrade_principle", "")
-                    repl = row.get("replacement_principle", "")
-                    upg_color = "#166534" if "COTS" in upg else ("#92400E" if "None" in upg else "#1E40AF")
-                    repl_color = "#7C2D12" if "Mandatory" in repl else "#4338CA"
+                for cat in cat_order:
+                    cat_rows = [r for r in table_data if r.get("category", "OS") == cat]
+                    if not cat_rows:
+                        continue
+                    color, emoji = cat_colors.get(cat, ("#374151", "📋"))
 
+                    # Category header
                     st.markdown(
-                        f"<tr style='background:{bg};'>"
-                        f"<td style='padding:8px 12px;border:1px solid #E2E8F0;font-weight:600;'>"
-                        f"{row.get('os_family', '')}</td>"
-                        f"<td style='padding:8px 12px;border:1px solid #E2E8F0;color:#1D4ED8;'>"
-                        f"{row.get('cloud_target', '')}</td>"
-                        f"<td style='padding:8px 12px;border:1px solid #E2E8F0;color:{upg_color};'>"
-                        f"{upg}</td>"
-                        f"<td style='padding:8px 12px;border:1px solid #E2E8F0;color:{repl_color};'>"
-                        f"{repl}</td>"
-                        f"</tr>",
+                        f"<div style='background:{color};color:white;padding:8px 14px;"
+                        f"border-radius:6px;margin:12px 0 4px;font-weight:700;font-size:0.9rem;'>"
+                        f"{emoji} {cat} — Guiding Principles</div>",
                         unsafe_allow_html=True)
 
-                st.markdown("</tbody></table>", unsafe_allow_html=True)
+                    # Table for this category
+                    st.markdown(
+                        "<table style='width:100%;border-collapse:collapse;font-size:0.82rem;margin-bottom:8px;'>"
+                        "<thead><tr style='background:#F1F5F9;'>"
+                        "<th style='padding:8px 10px;text-align:left;border:1px solid #E2E8F0;width:15%;'>Technology</th>"
+                        "<th style='padding:8px 10px;text-align:left;border:1px solid #E2E8F0;width:12%;'>Cloud Target</th>"
+                        "<th style='padding:8px 10px;text-align:left;border:1px solid #E2E8F0;width:36%;'>Upgrade Principle</th>"
+                        "<th style='padding:8px 10px;text-align:left;border:1px solid #E2E8F0;width:37%;'>Replacement Principle</th>"
+                        "</tr></thead><tbody>",
+                        unsafe_allow_html=True)
+
+                    row_colors = ["#FFFFFF", "#F8FAFC"]
+                    for i, row in enumerate(cat_rows):
+                        bg = row_colors[i % 2]
+                        upg = row.get("upgrade_principle", "")
+                        repl = row.get("replacement_principle", "")
+                        upg_color = "#166534" if "COTS" in upg else ("#92400E" if "None" in upg else "#1E40AF")
+                        repl_color = "#7C2D12" if "Mandatory" in repl or "Migrate" in repl else "#4338CA"
+                        tech = row.get("technology", row.get("os_family", ""))
+
+                        st.markdown(
+                            f"<tr style='background:{bg};'>"
+                            f"<td style='padding:6px 10px;border:1px solid #E2E8F0;font-weight:600;'>{tech}</td>"
+                            f"<td style='padding:6px 10px;border:1px solid #E2E8F0;color:#1D4ED8;'>{row.get('cloud_target','')}</td>"
+                            f"<td style='padding:6px 10px;border:1px solid #E2E8F0;color:{upg_color};'>{upg}</td>"
+                            f"<td style='padding:6px 10px;border:1px solid #E2E8F0;color:{repl_color};'>{repl}</td>"
+                            f"</tr>",
+                            unsafe_allow_html=True)
+
+                    st.markdown("</tbody></table>", unsafe_allow_html=True)
 
                 # Store in context for the policy chat
-                st.session_state.a5_context["os_principles_table"] = json.dumps(table_data)
+                st.session_state.a5_context["principles_table"] = json.dumps(table_data)
 
                 st.divider()
 
                 # Summary metrics
-                mc1, mc2, mc3 = st.columns(3)
+                mc1, mc2, mc3, mc4, mc5 = st.columns(5)
+                cats_in_scope = list(set(r.get("category", "OS") for r in table_data))
                 with mc1:
-                    st.metric("OS Families in Scope", len(table_data))
+                    st.metric("Categories", len(cats_in_scope))
                 with mc2:
+                    st.metric("Total Technologies", len(table_data))
+                with mc3:
+                    os_count = sum(1 for r in table_data if r.get("category") == "OS")
+                    st.metric("OS Families", os_count)
+                with mc4:
                     upgrade_count = sum(1 for r in table_data if "Upgrade" in r.get("upgrade_principle", "") or "COTS" in r.get("upgrade_principle", ""))
                     st.metric("Upgrade Paths", upgrade_count)
-                with mc3:
-                    replace_count = sum(1 for r in table_data if "Replace" in r.get("replacement_principle", "") or "Mandatory" in r.get("replacement_principle", ""))
-                    st.metric("Replacement Candidates", replace_count)
+                with mc5:
+                    replace_count = sum(1 for r in table_data if "Replace" in r.get("replacement_principle", "") or "Migrate" in r.get("replacement_principle", ""))
+                    st.metric("Modernization Candidates", replace_count)
 
                 st.divider()
                 col1, col2 = st.columns(2)
