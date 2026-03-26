@@ -16,6 +16,7 @@ Project window: Apr 2026 → Jun 2028
 
 import streamlit as st
 import pandas as pd
+import json
 from datetime import datetime
 import sys, os, types, importlib.util
 
