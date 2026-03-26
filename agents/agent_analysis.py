@@ -16,6 +16,72 @@ DB_PATH     = "/tmp/agent5_conversations.db"   # /tmp is writable on Streamlit C
 
 VERDICTS = ["CRITICAL", "UPGRADE NOW", "EXTEND + PLAN", "REPLACE", "CLOUD MIGRATE", "MONITOR"]
 
+# ── OS Family Categorization ─────────────────────────────────────────────────
+OS_FAMILY_RULES = [
+    ("Windows Family",      ["Windows"],       "Desktop 10/11 & Server 2012–2025"),
+    ("RHEL/Clone Family",   ["RHEL", "Red Hat", "AlmaLinux", "Alma", "Rocky", "Oracle Linux",
+                             "CentOS", "CentOS Stream"],
+                                               "RHEL, Alma, Rocky, Oracle Linux, CentOS"),
+    ("Debian/Ubuntu Family", ["Ubuntu", "Debian"], "Ubuntu 14.04+ & Debian 8–13"),
+    ("SUSE Family",         ["SLES", "SUSE", "openSUSE"], "SLES 11–16"),
+    ("Legacy Unix",         ["AIX", "HP-UX", "Solaris", "Tru64"], "AIX, HP-UX, Solaris, Tru64"),
+    ("BSD & VMS",           ["FreeBSD", "OpenBSD", "NetBSD", "OpenVMS"], "FreeBSD & OpenVMS"),
+    ("Apple",               ["macOS", "iOS", "iPadOS"], "macOS 13–26"),
+]
+
+def categorize_os_families(os_df):
+    """Categorize the OS dataframe into families. Returns dict: family_name → list of OS versions."""
+    families = {}
+    uncategorized = []
+    for _, row in os_df.iterrows():
+        ver = str(row.get("OS Version", ""))
+        matched = False
+        for fam_name, keywords, _ in OS_FAMILY_RULES:
+            if any(kw.lower() in ver.lower() for kw in keywords):
+                families.setdefault(fam_name, []).append(ver)
+                matched = True
+                break
+        if not matched and ver:
+            uncategorized.append(ver)
+    # Add uncategorized to "Other" if any
+    if uncategorized:
+        families["Other"] = uncategorized
+    return families
+
+def get_family_display():
+    """Return list of (family_name, description, emoji) for UI display."""
+    return [
+        ("Windows Family",       "Desktop 10/11 & Server 2012–2025", "🪟"),
+        ("RHEL/Clone Family",    "RHEL, Alma, Rocky, Oracle Linux, CentOS", "🐧"),
+        ("Debian/Ubuntu Family", "Ubuntu 14.04+ & Debian 8–13", "🐧"),
+        ("SUSE Family",          "SLES 11–16", "🦎"),
+        ("Legacy Unix",          "AIX, HP-UX, Solaris, Tru64", "🖥️"),
+        ("BSD & VMS",            "FreeBSD & OpenVMS", "👾"),
+        ("Apple",                "macOS 13–26", "🍎"),
+        ("Other",                "Other OS not listed above", "❓"),
+    ]
+
+LANDSCAPE_VERIFY_SYSTEM = """You are Agent 5 — a senior IT migration strategist.
+The user says they have an OS that is not in our tracked list.
+Your job is to determine:
+1. Is the user referring to an OS we already track but by a different name/nickname?
+   (e.g. "RHEL" = "Red Hat Enterprise Linux", "Win Server" = "Windows Server")
+2. Is this a genuinely new OS that we should add to our tracking?
+
+Our tracked OS families: Windows (10/11, Server 2003-2025), RHEL (7-10), Ubuntu (14.04-24.04),
+Debian (8-13), SLES (11-16), CentOS/Stream, Rocky Linux, AlmaLinux, Oracle Linux,
+macOS (Ventura/Sonoma/Sequoia), AIX (7.2-7.3), HP-UX (11i), Solaris (10-11.4),
+Tru64, FreeBSD (13-14), OpenVMS, ChromeOS, Android, iOS/iPadOS, Fedora,
+Raspberry Pi OS, IBM i.
+
+Respond with ONLY this JSON:
+{"match_found": true/false,
+ "matched_to": "exact OS name from our list if match found, else null",
+ "is_valid_os": true/false,
+ "os_name": "the canonical name of the OS",
+ "explanation": "brief explanation of your determination"
+}"""
+
 CONVERSATION_SYSTEM = f"""You are Agent 5 — a senior IT migration strategist at Infosys.
 Help an enterprise architect define their OS and database migration policy
 for a project running from 1 April 2026 to 30 June 2028.
@@ -196,6 +262,9 @@ class PolicyAnalysisAgent:
             "a5_costs": {}, "a5_os_done": False, "a5_db_done": False,
             "a5_ws_done": False, "a5_as_done": False, "a5_fw_done": False,
             "a5_preflight_done": False, "a5_log": [],
+            "a5_landscape_families": {},
+            "a5_landscape_selected": [],
+            "a5_landscape_other_pending": False,
         }
         for k, v in defaults.items():
             if k not in st.session_state:
@@ -209,9 +278,37 @@ class PolicyAnalysisAgent:
         for k in ["a5_status","a5_session_id","a5_context","a5_principles",
                   "a5_costs","a5_os_done","a5_db_done",
                   "a5_ws_done","a5_as_done","a5_fw_done",
-                  "a5_preflight_done","a5_log"]:
+                  "a5_preflight_done","a5_log",
+                  "a5_landscape_families","a5_landscape_selected",
+                  "a5_landscape_other_pending"]:
             st.session_state.pop(k, None)
         PolicyAnalysisAgent.init_session()
+
+    def verify_unknown_os(self, user_input: str, os_df) -> dict:
+        """Check if user-described OS matches something we already track or is genuinely new."""
+        known_os = ", ".join(os_df["OS Version"].unique().tolist()[:80])
+        prompt = (f"The user says their environment includes: \"{user_input}\"\n\n"
+                  f"Our currently tracked OS versions include (sample): {known_os}\n\n"
+                  f"Is this an OS we already track (possibly by a different name), "
+                  f"or is this genuinely a new OS we should add?")
+        try:
+            resp = self.client.chat.completions.create(
+                model=self.model, max_tokens=300,
+                messages=[
+                    {"role": "system", "content": LANDSCAPE_VERIFY_SYSTEM},
+                    {"role": "user", "content": prompt}
+                ])
+            text = resp.choices[0].message.content.strip()
+            if "```" in text:
+                text = text.split("```json")[-1].split("```")[0] if "```json" in text \
+                       else text.split("```")[1].split("```")[0]
+            s, e = text.find("{"), text.rfind("}")
+            if s != -1 and e > s:
+                return json.loads(text[s:e+1])
+        except Exception:
+            pass
+        return {"match_found": False, "is_valid_os": False, "os_name": user_input,
+                "explanation": "Could not verify — please add manually if needed."}
 
     def chat(self, messages: list) -> str:
         """Send conversation to gpt-4o-mini via chat.completions."""

@@ -1123,11 +1123,12 @@ with tab_a5:
         a5s = st.session_state.get("a5_status", "idle")
 
         # ── Progress stepper ──────────────────────────────────────────────────
-        steps    = ["💬 Policy Chat", "⚖️ Principles", "💰 Cost Intel", "🧠 Analysis", "✅ Complete"]
-        step_map = {"idle":0,"chatting":0,"principles":1,"costing":2,
-                    "ready":2,"analysing":3,"done":4}
+        steps    = ["🗺️ Landscape", "💬 Policy Chat", "⚖️ Principles", "💰 Cost Intel", "🧠 Analysis", "✅ Complete"]
+        step_map = {"idle":0,"landscape":0,"landscape_other":0,
+                    "chatting":1,"principles":2,"costing":3,
+                    "ready":3,"analysing":4,"done":5}
         cur_step = step_map.get(a5s, 0)
-        s_cols   = st.columns(5)
+        s_cols   = st.columns(len(steps))
         for i, (col, lbl) in enumerate(zip(s_cols, steps)):
             with col:
                 if i < cur_step:
@@ -1138,8 +1139,197 @@ with tab_a5:
                     st.markdown(f"<div style='text-align:center;color:#94A3B8;font-size:0.8rem;'>○ {lbl}</div>", unsafe_allow_html=True)
         st.divider()
 
+        # ── PHASE 0: LANDSCAPE SURVEY ────────────────────────────────────────
+        if a5s in ("idle", "landscape"):
+            from agents.agent_analysis import categorize_os_families, get_family_display
+
+            # Categorize OS families from live data
+            os_families = categorize_os_families(st.session_state.os_df)
+            st.session_state.a5_landscape_families = os_families
+
+            st.markdown("""
+            <div style="background:linear-gradient(135deg,#EFF6FF,#F0FDF4);
+                        border:1px solid #BFDBFE;border-radius:12px;
+                        padding:1.2rem 1.4rem;margin-bottom:1rem;">
+              <h3 style="margin:0 0 0.5rem;color:#1E40AF;font-size:1.05rem;">
+                🗺️ OS Landscape Survey
+              </h3>
+              <p style="margin:0;color:#374151;font-size:0.88rem;">
+                I have categorized your OS landscape into <strong>""" + str(len([f for f in os_families if f != "Other"])) + """ primary families</strong>
+                to simplify our modernization strategy.<br>
+                <strong>Are all of the following currently present in your active IT landscape?</strong><br>
+                <em>Please indicate any families that are NOT in scope for this exercise.</em>
+              </p>
+            </div>""", unsafe_allow_html=True)
+
+            if a5s == "idle":
+                st.session_state.a5_status = "landscape"
+                st.rerun()
+
+            # Display family checkboxes
+            family_display = get_family_display()
+            selected = []
+
+            with st.form("landscape_form"):
+                for fam_name, desc, emoji in family_display:
+                    count = len(os_families.get(fam_name, []))
+                    if fam_name == "Other":
+                        # Always show Other option
+                        versions_preview = ""
+                        default = False
+                    else:
+                        if count == 0:
+                            continue  # Skip families with no entries in our baseline
+                        versions_preview = ", ".join(os_families[fam_name][:4])
+                        if count > 4:
+                            versions_preview += f" + {count - 4} more"
+                        default = True
+
+                    col1, col2 = st.columns([1, 4])
+                    with col1:
+                        checked = st.checkbox(
+                            f"{emoji} {fam_name}",
+                            value=default,
+                            key=f"ls_{fam_name}"
+                        )
+                    with col2:
+                        st.markdown(
+                            f"<small style='color:#6B7280;'>{desc}"
+                            + (f" — <em>{versions_preview}</em>" if versions_preview else "")
+                            + f" ({count} tracked)</small>",
+                            unsafe_allow_html=True
+                        )
+                    if checked:
+                        selected.append(fam_name)
+
+                st.divider()
+                submitted = st.form_submit_button(
+                    "✅ Confirm Landscape → Proceed to Policy Chat",
+                    type="primary", use_container_width=True)
+
+            if submitted:
+                st.session_state.a5_landscape_selected = selected
+                if "Other" in selected:
+                    st.session_state.a5_status = "landscape_other"
+                else:
+                    # Store landscape context for the policy chat
+                    st.session_state.a5_context["os_landscape"] = ", ".join(
+                        [f for f in selected if f != "Other"])
+                    st.session_state.a5_status = "chatting"
+                st.rerun()
+
+        # ── PHASE 0b: OTHER OS HANDLING ──────────────────────────────────────
+        elif a5s == "landscape_other":
+            from agents.agent_analysis import categorize_os_families
+
+            st.markdown("""
+            <div style="background:#FFF7ED;border:1px solid #FED7AA;border-radius:12px;
+                        padding:1rem 1.2rem;margin-bottom:1rem;">
+              <h3 style="margin:0 0 0.4rem;color:#92400E;font-size:1rem;">
+                ❓ You selected "Other" — Tell us about your additional OS
+              </h3>
+              <p style="margin:0;color:#78716C;font-size:0.85rem;">
+                Please describe the OS that is missing from our list.
+                Agent 5 will check if we already track it under a different name,
+                or if it needs to be added to our baseline.
+              </p>
+            </div>""", unsafe_allow_html=True)
+
+            other_input = st.text_input(
+                "What OS is missing from the list?",
+                placeholder="e.g. Gentoo Linux, Arch Linux, Chrome OS Flex...",
+                key="a5_other_os_input"
+            )
+
+            if st.button("🔍 Verify OS", type="primary", disabled=not (key_ok and other_input)):
+                with st.spinner("🧠 Agent 5 is checking if this OS is already tracked..."):
+                    agent5 = PolicyAnalysisAgent(api_key=api_key)
+                    result = agent5.verify_unknown_os(other_input, st.session_state.os_df)
+
+                if result.get("match_found"):
+                    st.success(
+                        f"✅ **Match found!** \"{other_input}\" is already tracked as "
+                        f"**{result.get('matched_to', '?')}** in our baseline.\n\n"
+                        f"_{result.get('explanation', '')}_"
+                    )
+                    st.info("No changes needed. Click below to proceed.")
+                    if st.button("➡️ Proceed to Policy Chat", key="proceed_after_match"):
+                        st.session_state.a5_context["os_landscape"] = ", ".join(
+                            [f for f in st.session_state.a5_landscape_selected if f != "Other"])
+                        st.session_state.a5_status = "chatting"
+                        st.rerun()
+
+                elif result.get("is_valid_os"):
+                    os_name = result.get("os_name", other_input)
+                    st.warning(
+                        f"🆕 **New OS detected:** **{os_name}** is a valid OS not in our baseline.\n\n"
+                        f"_{result.get('explanation', '')}_\n\n"
+                        f"**Agent 1 (Sentinel) will be triggered** to fetch lifecycle data for this OS."
+                    )
+                    if st.button("🚀 Add OS & Re-scan with Agent 1", type="primary", key="trigger_a1"):
+                        # Add placeholder to baseline
+                        import pandas as pd
+                        new_row = {
+                            "OS Version": os_name,
+                            "Availability Date": "",
+                            "Security/Standard Support End": "",
+                            "Mainstream/Full Support End": "",
+                            "Extended/LTSC Support End": "",
+                            "Notes": f"Added by Agent 5 landscape survey — {datetime.now().strftime('%d %b %Y')}",
+                            "Recommendation": "",
+                            "Upgrade": "N", "Replace": "N",
+                            "Primary Alternative": "", "Secondary Alternative": ""
+                        }
+                        st.session_state.os_df = pd.concat(
+                            [st.session_state.os_df, pd.DataFrame([new_row])],
+                            ignore_index=True)
+                        st.session_state.os_df = add_risk_scores(st.session_state.os_df, "OS")
+
+                        # Trigger Agent 1 for a focused scan
+                        st.session_state.a1_status = "running"
+                        with st.spinner(f"🔍 Agent 1 scanning lifecycle data for {os_name}..."):
+                            try:
+                                agent1 = OSDataAgent(api_key=api_key)
+                                updates = agent1.fetch_updates(progress_callback=lambda p, m: None)
+                                new_os, new_db, new_ws, new_as, new_fw, changes = agent1.merge_updates_into_df(
+                                    st.session_state.os_df, st.session_state.db_df, updates,
+                                    ws_df=st.session_state.ws_df,
+                                    as_df=st.session_state.as_df,
+                                    fw_df=st.session_state.fw_df)
+                                st.session_state.os_df = add_risk_scores(new_os, "OS")
+                                st.session_state.db_df = add_risk_scores(new_db, "DB")
+                                st.session_state.ws_df = add_risk_scores(new_ws, "DB")
+                                st.session_state.as_df = add_risk_scores(new_as, "DB")
+                                st.session_state.fw_df = add_risk_scores(new_fw, "DB")
+                                st.session_state.changes_log = changes
+                                st.session_state.a1_status = "done"
+                                save_os_df(st.session_state.os_df)
+                                save_db_df(st.session_state.db_df)
+                            except Exception as e:
+                                st.session_state.a1_status = "error"
+                                st.error(f"Agent 1 error: {e}")
+
+                        st.success(f"✅ **{os_name}** added. Returning to landscape survey to re-categorize...")
+                        # Go back to landscape to re-categorize with the new OS
+                        st.session_state.a5_status = "landscape"
+                        import time; time.sleep(2)
+                        st.rerun()
+                else:
+                    st.error(
+                        f"❌ **\"{other_input}\" does not appear to be a recognized OS.**\n\n"
+                        f"_{result.get('explanation', '')}_\n\n"
+                        f"Please try again with a valid operating system name."
+                    )
+
+            st.divider()
+            if st.button("⏭️ Skip — Proceed without adding", use_container_width=True):
+                st.session_state.a5_context["os_landscape"] = ", ".join(
+                    [f for f in st.session_state.a5_landscape_selected if f != "Other"])
+                st.session_state.a5_status = "chatting"
+                st.rerun()
+
         # ── PHASE 1: CHAT ─────────────────────────────────────────────────────
-        if a5s in ("idle", "chatting"):
+        elif a5s in ("chatting",):
 
             # Import SQLite helpers from agent
             from agents.agent_analysis import (
@@ -1169,15 +1359,22 @@ with tab_a5:
                                 _delete_session(sess["session"])
                                 st.rerun()
 
-            if a5s == "idle":
-                st.session_state.a5_status = "chatting"
-                session_id = PolicyAnalysisAgent.get_or_create_session()
-                # Save a placeholder so the welcome panel shows while opening loads
-                st.session_state.a5_opening_pending = True
-                st.rerun()
-
+            # Create session on first entry to chat phase
             session_id = PolicyAnalysisAgent.get_or_create_session()
+            if not st.session_state.get("a5_opening_pending") and not _load_messages(session_id):
+                st.session_state.a5_opening_pending = True
             messages   = _load_messages(session_id)
+
+            # ── Show landscape context if available ──────────────────────────
+            ls_selected = st.session_state.get("a5_landscape_selected", [])
+            if ls_selected:
+                active_fams = [f for f in ls_selected if f != "Other"]
+                if active_fams:
+                    st.markdown(
+                        f"<div style='background:#EFF6FF;border:1px solid #BFDBFE;border-radius:8px;"
+                        f"padding:0.5rem 0.8rem;margin-bottom:0.8rem;font-size:0.82rem;color:#1E40AF;'>"
+                        f"🗺️ <strong>OS Landscape:</strong> {' · '.join(active_fams)}"
+                        f"</div>", unsafe_allow_html=True)
 
             # ── Welcome / guidance panel (shown only when chat is empty) ──────
             if not messages:
