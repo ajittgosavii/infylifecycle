@@ -278,13 +278,13 @@ with st.sidebar:
     st.markdown(f"""<div class="agent-card a4">
     <b>🛡️ Guardian — Version Snapshot Manager</b>
     <small style="display:block;margin-top:4px;color:#666">{len(history)} snapshot(s)</small></div>""", unsafe_allow_html=True)
-    st.markdown(f"""<div class="agent-card a5" id="a5-card" style="cursor:pointer;" onclick="
-        const tabs = window.parent.document.querySelectorAll('[data-baseweb=\\'tab\\']');
-        if(tabs.length>0) tabs[tabs.length-1].click();
-    ">
+    st.markdown(f"""<div class="agent-card a5">
     <b>🧠 Strategist — Policy Analysis Engine</b><br>{badge(a5s)}
-    <small style="display:block;margin-top:4px;color:#666">Apr 2026 → Jun 2028 · Click to open</small>
+    <small style="display:block;margin-top:4px;color:#666">Apr 2026 → Jun 2028</small>
     </div>""", unsafe_allow_html=True)
+    if st.button("▶ Open Strategist", width="stretch", key="open_a5"):
+        st.session_state["show_strategist"] = not st.session_state.get("show_strategist", False)
+        st.rerun()
     st.divider()
 
     os_recs = (st.session_state.os_df["Recommendation"] != "").sum()
@@ -644,10 +644,9 @@ if run_a2:
 
 
 # ── Tabs ───────────────────────────────────────────────────────────────────────
-tab_dash, tab_os, tab_db, tab_ws, tab_as, tab_fw, tab_a5 = st.tabs([
+tab_dash, tab_os, tab_db, tab_ws, tab_as, tab_fw = st.tabs([
     "📊 Dashboard", "🖥️ OS Versions", "🗄️ DB Versions",
     "🌐 Web Servers", "⚙️ App Servers", "📦 Frameworks",
-    "🧠 Agent 5 — Policy Analysis"
 ])
 
 
@@ -1103,8 +1102,9 @@ with tab_fw:
     )
 
 
-# ────────────────── Tab 5: Agent 5 Policy Analysis ────────────────────────────
-with tab_a5:
+# ────────────────── Strategist Panel (shown when toggled from sidebar) ─────────
+if st.session_state.get("show_strategist", False):
+    st.divider()
     st.markdown("""
     <div style="background:linear-gradient(135deg,#1a1a2e,#16213e,#0f3460);
                 padding:1.2rem 1.8rem;border-radius:12px;color:white;margin-bottom:1.5rem;">
