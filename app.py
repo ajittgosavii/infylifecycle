@@ -70,6 +70,12 @@ OS_DATA              = _m_baseline.OS_DATA
 DB_DATA              = _m_baseline.DB_DATA
 OS_COLUMNS           = _m_baseline.OS_COLUMNS
 DB_COLUMNS           = _m_baseline.DB_COLUMNS
+WS_DATA              = _m_baseline.WS_DATA
+WS_COLUMNS           = _m_baseline.WS_COLUMNS
+AS_DATA              = _m_baseline.AS_DATA
+AS_COLUMNS           = _m_baseline.AS_COLUMNS
+FW_DATA              = _m_baseline.FW_DATA
+FW_COLUMNS           = _m_baseline.FW_COLUMNS
 
 # Data store helpers
 save_os_df      = _m_store.save_os_df
@@ -154,6 +160,14 @@ def _init():
             st.session_state["os_df"] = baseline_os
             st.session_state["db_df"] = baseline_db
 
+    # ── Web Servers, App Servers, Frameworks — always from baseline ──
+    if "ws_df" not in st.session_state:
+        st.session_state["ws_df"] = pd.DataFrame(WS_DATA)
+    if "as_df" not in st.session_state:
+        st.session_state["as_df"] = pd.DataFrame(AS_DATA)
+    if "fw_df" not in st.session_state:
+        st.session_state["fw_df"] = pd.DataFrame(FW_DATA)
+
     # Restore last_refresh from SQLite so Agent 3 timer survives restarts
     if "last_refresh" not in st.session_state:
         saved_refresh = load_app_state("last_refresh")
@@ -184,6 +198,12 @@ if "Risk Score" not in st.session_state.os_df.columns:
     st.session_state.os_df = add_risk_scores(st.session_state.os_df, "OS")
 if "Risk Score" not in st.session_state.db_df.columns:
     st.session_state.db_df = add_risk_scores(st.session_state.db_df, "DB")
+if "Risk Score" not in st.session_state.ws_df.columns:
+    st.session_state.ws_df = add_risk_scores(st.session_state.ws_df, "DB")
+if "Risk Score" not in st.session_state.as_df.columns:
+    st.session_state.as_df = add_risk_scores(st.session_state.as_df, "DB")
+if "Risk Score" not in st.session_state.fw_df.columns:
+    st.session_state.fw_df = add_risk_scores(st.session_state.fw_df, "DB")
 
 
 def badge(status: str) -> str:
@@ -194,42 +214,10 @@ def badge(status: str) -> str:
 
 # ── Sidebar ────────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("""
-    <div style="background:linear-gradient(135deg,#001F5B 0%,#003087 50%,#0057C8 100%);
-                border-radius:12px;padding:14px 16px;text-align:center;">
-      <div style="display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:6px;">
-        <div style="position:relative;width:40px;height:40px;">
-          <svg viewBox="0 0 40 40" width="40" height="40" style="animation:logospin 8s linear infinite;">
-            <circle cx="20" cy="20" r="16" fill="none" stroke="#00C6FF" stroke-width="2" opacity="0.3"/>
-            <circle cx="20" cy="20" r="12" fill="none" stroke="#00C6FF" stroke-width="2"
-                    stroke-dasharray="18 58" stroke-linecap="round"/>
-          </svg>
-          <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
-                      width:6px;height:6px;background:#00C6FF;border-radius:50%;"></div>
-        </div>
-        <div style="text-align:left;">
-          <div style="font-size:20px;font-weight:800;color:white;letter-spacing:2px;line-height:1;">INFY</div>
-          <div style="font-size:8.5px;color:#93C5FD;letter-spacing:2.5px;margin-top:3px;">LIFECYCLE TRACKER</div>
-        </div>
-      </div>
-      <div style="height:2px;background:#1E3A5F;border-radius:1px;overflow:hidden;margin:4px 0;">
-        <div style="height:100%;background:linear-gradient(90deg,#10B981,#34D399,#6EE7B7);
-                    border-radius:1px;animation:logosweep 4s ease-in-out infinite;"></div>
-      </div>
-      <div style="display:flex;justify-content:center;gap:12px;margin-top:6px;">
-        <span style="font-size:7.5px;color:#6EE7B7;display:flex;align-items:center;gap:3px;">
-          <span style="width:5px;height:5px;background:#10B981;border-radius:50%;display:inline-block;"></span>LIVE</span>
-        <span style="font-size:7.5px;color:#FCD34D;display:flex;align-items:center;gap:3px;">
-          <span style="width:5px;height:5px;background:#F59E0B;border-radius:50%;display:inline-block;"></span>5 AGENTS</span>
-        <span style="font-size:7.5px;color:#93C5FD;display:flex;align-items:center;gap:3px;">
-          <span style="width:5px;height:5px;background:#60A5FA;border-radius:50%;display:inline-block;"></span>AI</span>
-      </div>
-    </div>
-    <style>
-      @keyframes logospin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
-      @keyframes logosweep{0%,100%{width:20%;margin-left:0}50%{width:80%;margin-left:10%}}
-    </style>
-    """, unsafe_allow_html=True)
+    try:
+        st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/9/90/Infosys_logo.svg/1200px-Infosys_logo.svg.png", width=130)
+    except Exception:
+        st.markdown("### INFY")
     st.divider()
 
     st.subheader("🔑 OpenAI API Key")
@@ -275,18 +263,13 @@ with st.sidebar:
     refresh_agent.render_status_card(
         st.session_state.last_refresh,
         os_count=len(st.session_state.os_df),
-        db_count=len(st.session_state.db_df)
+        db_count=len(st.session_state.db_df),
+        ws_count=len(st.session_state.ws_df),
+        as_count=len(st.session_state.as_df),
+        fw_count=len(st.session_state.fw_df)
     )
     st.divider()
 
-    # ── Project Settings ──────────────────────────────────────────────────────
-    st.divider()
-    render_project_settings()
-    st.divider()
-
-    # ── Global Search ─────────────────────────────────────────────────────────
-    global_search = st.text_input("🔍 Search across all data", placeholder="e.g. Windows Server 2016, Oracle 19c...",
-                                   key="global_search")
     st.divider()
 
     # Agent 4 / 5
@@ -294,16 +277,19 @@ with st.sidebar:
     a5s = st.session_state.get("a5_status", "idle")
     st.markdown(f"""<div class="agent-card a4">
     <b>🛡️ Guardian — Version Snapshot Manager</b>
-    <small style="display:block;margin-top:4px;color:#666">{len(history)} snapshot(s)</small></div>
-    <div class="agent-card a5">
+    <small style="display:block;margin-top:4px;color:#666">{len(history)} snapshot(s)</small></div>""", unsafe_allow_html=True)
+    st.markdown(f"""<div class="agent-card a5" id="a5-card" style="cursor:pointer;" onclick="
+        const tabs = window.parent.document.querySelectorAll('[data-baseweb=\\'tab\\']');
+        if(tabs.length>0) tabs[tabs.length-1].click();
+    ">
     <b>🧠 Strategist — Policy Analysis Engine</b><br>{badge(a5s)}
-    <small style="display:block;margin-top:4px;color:#666">Apr 2026 → Jun 2028</small>
+    <small style="display:block;margin-top:4px;color:#666">Apr 2026 → Jun 2028 · Click to open</small>
     </div>""", unsafe_allow_html=True)
     st.divider()
 
     os_recs = (st.session_state.os_df["Recommendation"] != "").sum()
     db_recs = (st.session_state.db_df["Recommendation"] != "").sum()
-    st.caption(f"📊 OS: **{len(st.session_state.os_df)}** · DB: **{len(st.session_state.db_df)}** rows")
+    st.caption(f"📊 OS: **{len(st.session_state.os_df)}** · DB: **{len(st.session_state.db_df)}** · WS: **{len(st.session_state.ws_df)}** · AS: **{len(st.session_state.as_df)}** · FW: **{len(st.session_state.fw_df)}** rows")
     st.caption(f"💡 Recommendations: OS {os_recs} · DB {db_recs}")
 
     # ── Persistence status ────────────────────────────────────────────────────
@@ -335,6 +321,65 @@ with st.sidebar:
             f"</div>", unsafe_allow_html=True
         )
 
+    # ══════════════════════════════════════════════════════════════════════════
+    # TOOLS SECTION — Inventory Upload, What-If Planner, Agent Status, History
+    # ══════════════════════════════════════════════════════════════════════════
+    st.divider()
+    st.markdown("""<div style='background:linear-gradient(135deg,#0F172A,#1E293B);
+        padding:0.6rem 0.8rem;border-radius:8px;margin-bottom:0.6rem;'>
+        <span style='color:#F59E0B;font-weight:700;font-size:0.85rem;'>🧰 TOOLS & UTILITIES</span>
+    </div>""", unsafe_allow_html=True)
+
+    # ── Inventory Upload (sidebar) ───────────────────────────────────────────
+    with st.expander("📤 Inventory Upload", expanded=False):
+        matched_os_inv, matched_db_inv = render_upload_section()
+        if matched_os_inv is not None:
+            with st.spinner("Matching OS inventory..."):
+                enriched_os = match_os_inventory(matched_os_inv, st.session_state.os_df)
+                st.session_state["inv_matched_os"] = enriched_os
+        if matched_db_inv is not None:
+            with st.spinner("Matching DB inventory..."):
+                enriched_db = match_db_inventory(matched_db_inv, st.session_state.db_df)
+                st.session_state["inv_matched_db"] = enriched_db
+        stored_os_inv = st.session_state.get("inv_matched_os")
+        stored_db_inv = st.session_state.get("inv_matched_db")
+        if stored_os_inv is not None or stored_db_inv is not None:
+            render_inventory_results(stored_os_inv, stored_db_inv)
+
+    # ── What-If Planner (sidebar) ────────────────────────────────────────────
+    with st.expander("🔮 What-If Planner", expanded=False):
+        render_scenario_planner(st.session_state.os_df, st.session_state.db_df)
+
+    # ── Agent Status & Log (sidebar) ─────────────────────────────────────────
+    with st.expander("📋 Agent Status & Log", expanded=False):
+        s1 = st.session_state.a1_status
+        s2 = st.session_state.a2_status
+        icon1 = {"idle":"⚪","running":"🔵","done":"✅","error":"❌"}.get(s1,"⚪")
+        icon2 = {"idle":"⚪","running":"🔵","done":"✅","error":"❌"}.get(s2,"⚪")
+        st.markdown(f"{icon1} **Sentinel**: `{s1.upper()}`")
+        st.markdown(f"{icon2} **Advisor**: `{s2.upper()}`")
+        last_r = st.session_state.last_refresh
+        days_left = refresh_agent.days_until_refresh(last_r)
+        due = refresh_agent.is_refresh_due(last_r)
+        icon3 = "🟡" if due else ("✅" if last_r else "⚪")
+        last_str = last_r.strftime("%d %b %H:%M") if last_r else "Never"
+        st.markdown(f"{icon3} **Watchdog**: `{'DUE' if due else ('OK' if last_r else 'WAIT')}`  \nLast: {last_str}")
+        h = VersionGuardianAgent.get_history()
+        st.markdown(f"🛡️ **Guardian**: {len(h)} snapshot(s)")
+        a5s_sb = st.session_state.get("a5_status","idle")
+        gps_sb = st.session_state.get("a5_principles",[])
+        st.markdown(f"🧠 **Strategist**: `{a5s_sb.upper()}` · {len(gps_sb)} principles")
+        if st.session_state.changes_log:
+            st.caption(f"📋 {len(st.session_state.changes_log)} changes from last Agent 1 run")
+            for c in st.session_state.changes_log[:5]:
+                st.markdown(f"<small>- {c}</small>", unsafe_allow_html=True)
+            if len(st.session_state.changes_log) > 5:
+                st.caption(f"... and {len(st.session_state.changes_log)-5} more")
+
+    # ── Version History (sidebar) ────────────────────────────────────────────
+    with st.expander("🛡️ Version History", expanded=False):
+        VersionGuardianAgent.render_history_tab()
+
 
 # ── Header ────────────────────────────────────────────────────────────────────
 st.markdown(f"""
@@ -342,7 +387,7 @@ st.markdown(f"""
   <h1>🖥️ INFY Migration Version Lifecycle Tracker</h1>
   <p>Infosys Enterprise Architecture &nbsp;·&nbsp;
      Powered by OpenAI GPT &nbsp;·&nbsp;
-     {len(OS_DATA)} OS + {len(DB_DATA)} DB versions &nbsp;·&nbsp;
+     {len(OS_DATA)} OS + {len(DB_DATA)} DB + {len(WS_DATA)} Web Servers + {len(AS_DATA)} App Servers + {len(FW_DATA)} Frameworks &nbsp;·&nbsp;
      Risk Dashboard · Scenario Planner · Inventory Upload · PDF Reports &nbsp;·&nbsp;
      5 AI Agents: Sentinel · Advisor · Watchdog · Guardian · Strategist</p>
 </div>
@@ -358,18 +403,27 @@ if (refresh_agent.is_refresh_due(st.session_state.last_refresh)
     approved = refresh_agent.render_refresh_banner(
         st.session_state.last_refresh,
         os_count=len(st.session_state.os_df),
-        db_count=len(st.session_state.db_df)
+        db_count=len(st.session_state.db_df),
+        ws_count=len(st.session_state.ws_df),
+        as_count=len(st.session_state.as_df),
+        fw_count=len(st.session_state.fw_df)
     )
     if approved:
         VersionGuardianAgent.snapshot(
             st.session_state.os_df,
             st.session_state.db_df,
-            st.session_state.changes_log
+            st.session_state.changes_log,
+            ws_df=st.session_state.ws_df,
+            as_df=st.session_state.as_df,
+            fw_df=st.session_state.fw_df
         )
         st.session_state.a1_status = "idle"
         st.session_state.a2_status = "idle"
         st.session_state.a5_os_done = False
         st.session_state.a5_db_done = False
+        st.session_state.a5_ws_done = False
+        st.session_state.a5_as_done = False
+        st.session_state.a5_fw_done = False
         st.toast("✅ Refresh approved — click 'Run Agent 1' to check for updates.", icon="🔄")
 
 
@@ -380,7 +434,10 @@ if run_a1:
         VersionGuardianAgent.snapshot(
             st.session_state.os_df,
             st.session_state.db_df,
-            st.session_state.changes_log
+            st.session_state.changes_log,
+            ws_df=st.session_state.ws_df,
+            as_df=st.session_state.as_df,
+            fw_df=st.session_state.fw_df
         )
     st.session_state.old_os_df = st.session_state.os_df.copy()
     st.session_state.old_db_df = st.session_state.db_df.copy()
@@ -400,21 +457,33 @@ if run_a1:
 
     try:
         updates = agent1.fetch_updates(progress_callback=a1_cb)
-        new_os, new_db, changes = agent1.merge_updates_into_df(
+        new_os, new_db, new_ws, new_as, new_fw, changes = agent1.merge_updates_into_df(
             st.session_state.os_df,
             st.session_state.db_df,
-            updates
+            updates,
+            ws_df=st.session_state.ws_df,
+            as_df=st.session_state.as_df,
+            fw_df=st.session_state.fw_df
         )
         # Recompute risk scores after update
         new_os = add_risk_scores(new_os, "OS")
         new_db = add_risk_scores(new_db, "DB")
+        new_ws = add_risk_scores(new_ws, "DB")
+        new_as = add_risk_scores(new_as, "DB")
+        new_fw = add_risk_scores(new_fw, "DB")
         st.session_state.os_df     = new_os
         st.session_state.db_df     = new_db
+        st.session_state.ws_df     = new_ws
+        st.session_state.as_df     = new_as
+        st.session_state.fw_df     = new_fw
         st.session_state.changes_log = changes
         st.session_state.last_refresh = datetime.now()
         st.session_state.a1_status    = "done"
         st.session_state.a5_os_done   = False
         st.session_state.a5_db_done   = False
+        st.session_state.a5_ws_done   = False
+        st.session_state.a5_as_done   = False
+        st.session_state.a5_fw_done   = False
 
         # ── Persist Agent 1 date changes to SQLite ────────────────────────────
         save_os_df(new_os)
@@ -523,6 +592,37 @@ if run_a2:
         st.session_state.a2_status = "error"
         st.stop()
 
+    # ── Checkpoint 3.5: WS / AS / FW Recommendations ─────────────────────────
+    chk35 = st.empty()
+    chk35.info("🧠 **Checkpoint 3.5/4** — Generating Web Server, App Server & Framework recommendations...")
+    extra_prog = st.progress(0, text="Processing WS/AS/FW...")
+    extra_live = st.empty()
+
+    try:
+        def a2_extra_cb(pct, msg):
+            extra_prog.progress(min(pct, 1.0), text=msg)
+            extra_live.caption(f"↳ {msg}")
+
+        new_ws = agent2.generate_generic_recommendations(
+            st.session_state.ws_df, "WS", "Web Server", progress_callback=a2_extra_cb)
+        st.session_state.ws_df = new_ws
+
+        new_as = agent2.generate_generic_recommendations(
+            st.session_state.as_df, "AS", "App Server", progress_callback=a2_extra_cb)
+        st.session_state.as_df = new_as
+
+        new_fw = agent2.generate_generic_recommendations(
+            st.session_state.fw_df, "FW", "Framework", progress_callback=a2_extra_cb)
+        st.session_state.fw_df = new_fw
+
+        ws_f = (new_ws["Recommendation"] != "").sum()
+        as_f = (new_as["Recommendation"] != "").sum()
+        fw_f = (new_fw["Recommendation"] != "").sum()
+        chk35.success(f"✅ **Checkpoint 3.5/4 PASSED** — WS: {ws_f}/{len(new_ws)} · "
+                      f"AS: {as_f}/{len(new_as)} · FW: {fw_f}/{len(new_fw)} recommendations filled")
+    except Exception as e:
+        chk35.warning(f"⚠️ WS/AS/FW recommendations partial: `{e}`")
+
     # ── Checkpoint 4: Summary ─────────────────────────────────────────────────
     os_filled = (st.session_state.os_df["Recommendation"] != "").sum()
     db_filled = (st.session_state.db_df["Recommendation"] != "").sum()
@@ -544,10 +644,9 @@ if run_a2:
 
 
 # ── Tabs ───────────────────────────────────────────────────────────────────────
-tab_dash, tab_os, tab_db, tab_inv, tab_scenario, tab_status, tab_history, tab_a5 = st.tabs([
+tab_dash, tab_os, tab_db, tab_ws, tab_as, tab_fw, tab_a5 = st.tabs([
     "📊 Dashboard", "🖥️ OS Versions", "🗄️ DB Versions",
-    "📤 Inventory Upload", "🔮 What-If Planner",
-    "📋 Agent Status & Log", "🛡️ Version History",
+    "🌐 Web Servers", "⚙️ App Servers", "📦 Frameworks",
     "🧠 Agent 5 — Policy Analysis"
 ])
 
@@ -555,13 +654,13 @@ tab_dash, tab_os, tab_db, tab_inv, tab_scenario, tab_status, tab_history, tab_a5
 # ────────────────── Tab 0: Executive Dashboard ────────────────────────────────
 with tab_dash:
     st.subheader("📊 Executive Risk Dashboard")
-    st.caption("Real-time risk analysis across your entire OS & DB portfolio")
+    st.caption("Real-time risk analysis across your entire OS, DB, Web Server, App Server & Framework portfolio")
 
     # Top-level KPI metrics
     os_df_d = st.session_state.os_df
     db_df_d = st.session_state.db_df
     risk_summary = get_risk_summary(os_df_d, db_df_d)
-    total_items = len(os_df_d) + len(db_df_d)
+    total_items = len(os_df_d) + len(db_df_d) + len(st.session_state.ws_df) + len(st.session_state.as_df) + len(st.session_state.fw_df)
 
     k1, k2, k3, k4, k5, k6 = st.columns(6)
     with k1: st.metric("Total Portfolio", total_items)
@@ -803,117 +902,205 @@ with tab_db:
     )
 
 
-# ────────────────── Tab: Inventory Upload ──────────────────────────────────────
-with tab_inv:
-    st.subheader("📤 Your Infrastructure Inventory")
-    matched_os_inv, matched_db_inv = render_upload_section()
+# ────────────────── Tab: Web Servers ───────────────────────────────────────────
+with tab_ws:
+    ws_df = st.session_state.ws_df
+    st.subheader("🌐 Web Server Versions")
+    st.caption("Lifecycle tracking for IIS, Nginx, Apache and other web servers")
 
-    if matched_os_inv is not None:
-        with st.spinner("Matching OS inventory against lifecycle data..."):
-            enriched_os = match_os_inventory(matched_os_inv, st.session_state.os_df)
-            st.session_state["inv_matched_os"] = enriched_os
+    wm1, wm2, wm3, wm4 = st.columns(4)
+    eol_ws = (ws_df.get("Status", pd.Series(dtype=str)).str.lower() == "end of life").sum()
+    exp_ws = (ws_df.get("Status", pd.Series(dtype=str)).str.lower() == "expiring soon").sum()
+    sup_ws = (ws_df.get("Status", pd.Series(dtype=str)).str.lower() == "supported").sum()
+    with wm1: st.metric("Total Web Servers", len(ws_df))
+    with wm2: st.metric("🔴 End of Life", int(eol_ws))
+    with wm3: st.metric("🟡 Expiring Soon", int(exp_ws))
+    with wm4: st.metric("🟢 Supported", int(sup_ws))
 
-    if matched_db_inv is not None:
-        with st.spinner("Matching DB inventory against lifecycle data..."):
-            enriched_db = match_db_inventory(matched_db_inv, st.session_state.db_df)
-            st.session_state["inv_matched_db"] = enriched_db
+    with st.expander("🔍 Filters", expanded=False):
+        wf1, wf2, wf3 = st.columns(3)
+        with wf1:
+            ws_names = ["All"] + sorted(ws_df["Web Server"].dropna().unique().tolist())
+            ws_f = st.selectbox("Web Server", ws_names, key="ws_filter")
+        with wf2:
+            ws_statuses = ["All"] + sorted(ws_df["Status"].dropna().unique().tolist())
+            ws_stat_f = st.selectbox("Status", ws_statuses, key="ws_stat_filter")
+        with wf3:
+            ws_upg_f = st.selectbox("Upgrade", ["All","Y","N"], key="ws_upg_filter")
 
-    # Show previously matched results
-    stored_os_inv = st.session_state.get("inv_matched_os")
-    stored_db_inv = st.session_state.get("inv_matched_db")
-    if stored_os_inv is not None or stored_db_inv is not None:
-        st.divider()
-        render_inventory_results(stored_os_inv, stored_db_inv)
+    view_ws = ws_df.copy()
+    if ws_f != "All": view_ws = view_ws[view_ws["Web Server"] == ws_f]
+    if ws_stat_f != "All": view_ws = view_ws[view_ws["Status"] == ws_stat_f]
+    if ws_upg_f != "All": view_ws = view_ws[view_ws.get("Upgrade", pd.Series(dtype=str)) == ws_upg_f]
 
+    def _style_ws_status(val):
+        m = {"end of life": "background-color:#FFCDD2;color:#B71C1C",
+             "expiring soon": "background-color:#FFE0B2;color:#E65100",
+             "supported": "background-color:#C8E6C9;color:#1B5E20"}
+        return m.get(str(val).lower(), "")
 
-# ────────────────── Tab: What-If Scenario Planner ─────────────────────────────
-with tab_scenario:
-    render_scenario_planner(st.session_state.os_df, st.session_state.db_df)
+    ws_disp = {
+        "Web Server": st.column_config.TextColumn("Web Server", width=140),
+        "Version": st.column_config.TextColumn("Version", width=100),
+        "Type": st.column_config.TextColumn("Type", width=120),
+        "Mainstream / Premier End": st.column_config.TextColumn("Mainstream End", width=130),
+        "Extended Support End": st.column_config.TextColumn("Extended End", width=120),
+        "Status": st.column_config.TextColumn("Status", width=120),
+        "Notes": st.column_config.TextColumn("Notes", width=220),
+        "Recommendation": st.column_config.TextColumn("💡 Recommendation", width=360),
+        "Upgrade": st.column_config.TextColumn("⬆ Upgrade", width=80),
+        "Replace": st.column_config.TextColumn("🔁 Replace", width=80),
+        "Primary Alternative": st.column_config.TextColumn("Primary Alt", width=150),
+    }
+    if "Risk Score" in view_ws.columns:
+        ws_disp["Risk Score"] = st.column_config.NumberColumn("🎯 Risk", width=70)
+    if "Risk Level" in view_ws.columns:
+        ws_disp["Risk Level"] = st.column_config.TextColumn("Risk Level", width=90)
+    if "Days Until EOL" in view_ws.columns:
+        ws_disp["Days Until EOL"] = st.column_config.NumberColumn("📅 Days to EOL", width=100)
+    hide_cols = [c for c in ["Risk Color"] if c in view_ws.columns]
+    if hide_cols: view_ws = view_ws.drop(columns=hide_cols)
 
-
-# ────────────────── Tab 3: Agent Status ───────────────────────────────────────
-with tab_status:
-    st.subheader("🤖 Agent Activity Dashboard")
-    ca1, ca2, ca3 = st.columns(3)
-
-    s1 = st.session_state.a1_status
-    with ca1:
-        icon1 = {"idle":"⚪","running":"🔵","done":"✅","error":"❌"}.get(s1,"⚪")
-        st.markdown(f"""**{icon1} Sentinel — Lifecycle Scanner**
-- Status: `{s1.upper()}`
-- Baseline: **{len(OS_DATA)} OS + {len(DB_DATA)} DB** rows pre-loaded
-- Task: Scans web for lifecycle date changes
-- Tool: gpt-4o-mini (16 targeted checks)
-- Updates: Notes column with [Web verified: date]""")
-
-    s2 = st.session_state.a2_status
-    with ca2:
-        icon2 = {"idle":"⚪","running":"🔵","done":"✅","error":"❌"}.get(s2,"⚪")
-        st.markdown(f"""**{icon2} Advisor — AI Recommendation Engine**
-- Status: `{s2.upper()}`
-- Tool: gpt-4o-mini (cost-efficient)
-- Batch: 20 rows per API call
-- Rules: EOL→CRITICAL, Expiring→URGENT, Supported→PLAN
-- Oracle: flags PostgreSQL migration savings""")
-
-    with ca3:
-        last_r   = st.session_state.last_refresh
-        days_left= refresh_agent.days_until_refresh(last_r)
-        due      = refresh_agent.is_refresh_due(last_r)
-        icon3    = "🟡" if due else ("✅" if last_r else "⚪")
-        last_str = last_r.strftime("%d %b %Y %H:%M") if last_r else "Never"
-        st.markdown(f"""**{icon3} Watchdog — Refresh Monitor**
-- Status: `{"REFRESH DUE" if due else ("MONITORING" if last_r else "WAITING")}`
-- Interval: Every 14 days
-- Last check: {last_str}
-- Next check: {f"In {days_left} days" if last_r else "After first Agent 1 run"}""")
-
-    st.divider()
-    ca4, ca5 = st.columns(2)
-    with ca4:
-        h = VersionGuardianAgent.get_history()
-        st.markdown(f"""**🛡️ Guardian — Version Snapshot Manager**
-- Snapshots: **{len(h)}** stored
-- Auto-runs before every Sentinel refresh
-- Preserves Recommendation + Policy columns
-- Max 10 versions in session""")
-    with ca5:
-        a5s = st.session_state.get("a5_status","idle")
-        gps = st.session_state.get("a5_principles",[])
-        st.markdown(f"""**🧠 Strategist — Policy Analysis**
-- Status: `{a5s.upper()}`
-- Principles generated: **{len(gps)}**
-- Project: 1 Apr 2026 → 30 Jun 2028
-- Phases: Interview → Principles → Cost Intel → Verdicts""")
-
-    if st.session_state.changes_log:
-        st.divider()
-        st.subheader(f"📋 Change Log — Last Agent 1 Run ({len(st.session_state.changes_log)} changes)")
-        for c in st.session_state.changes_log:
-            st.markdown(f"- {c}")
-    else:
-        st.info("No internet changes detected yet. Run Agent 1 to check for updates.")
-
-    st.divider()
-    st.subheader("📖 How to Use")
-    st.markdown(f"""
-**Data is pre-loaded** — {len(OS_DATA)} OS + {len(DB_DATA)} DB versions with risk scores computed automatically.
-
-1. **📊 Dashboard** — View your risk posture at a glance with interactive charts
-2. **Run Advisor** — AI generates expert recommendations for all {len(OS_DATA)+len(DB_DATA)} rows
-3. **Run Sentinel** — Scans the internet for lifecycle date changes
-4. **📤 Upload Inventory** — Upload your actual server/DB CSV to see your specific risk
-5. **🔮 What-If Planner** — Simulate upgrades and see before/after risk reduction
-6. **🧠 Strategist** (Policy Analysis) — Conversational policy interview → verdicts
-7. **Download Excel/PDF** — Full data export or executive summary report
-8. **Watchdog** auto-prompts every 14 days to re-scan for changes
-    """)
+    st.caption(f"Showing {len(view_ws)} of {len(ws_df)} Web Server entries")
+    st.dataframe(
+        view_ws.style.map(_style_ws_status, subset=["Status"]) if "Status" in view_ws.columns else view_ws,
+        width="stretch", height=520, hide_index=True, column_config=ws_disp
+    )
 
 
-# ────────────────── Tab 4: Version History ────────────────────────────────────
-with tab_history:
-    st.subheader("🛡️ Agent 4 — Version History")
-    VersionGuardianAgent.render_history_tab()
+# ────────────────── Tab: Application Servers ──────────────────────────────────
+with tab_as:
+    as_df = st.session_state.as_df
+    st.subheader("⚙️ Application Server Versions")
+    st.caption("Lifecycle tracking for Tomcat, JBoss, WebSphere, Kafka, RabbitMQ, Kubernetes and more")
+
+    am1, am2, am3, am4 = st.columns(4)
+    eol_as = (as_df.get("Status", pd.Series(dtype=str)).str.lower() == "end of life").sum()
+    exp_as = (as_df.get("Status", pd.Series(dtype=str)).str.lower() == "expiring soon").sum()
+    sup_as = (as_df.get("Status", pd.Series(dtype=str)).str.lower() == "supported").sum()
+    with am1: st.metric("Total App Servers", len(as_df))
+    with am2: st.metric("🔴 End of Life", int(eol_as))
+    with am3: st.metric("🟡 Expiring Soon", int(exp_as))
+    with am4: st.metric("🟢 Supported", int(sup_as))
+
+    with st.expander("🔍 Filters", expanded=False):
+        af1, af2, af3 = st.columns(3)
+        with af1:
+            as_names = ["All"] + sorted(as_df["App Server"].dropna().unique().tolist())
+            as_f = st.selectbox("App Server", as_names, key="as_filter")
+        with af2:
+            as_types = ["All"] + sorted(as_df["Type"].dropna().unique().tolist())
+            as_type_f = st.selectbox("Type", as_types, key="as_type_filter")
+        with af3:
+            as_statuses = ["All"] + sorted(as_df["Status"].dropna().unique().tolist())
+            as_stat_f = st.selectbox("Status", as_statuses, key="as_stat_filter")
+
+    view_as = as_df.copy()
+    if as_f != "All": view_as = view_as[view_as["App Server"] == as_f]
+    if as_type_f != "All": view_as = view_as[view_as["Type"] == as_type_f]
+    if as_stat_f != "All": view_as = view_as[view_as["Status"] == as_stat_f]
+
+    def _style_as_status(val):
+        m = {"end of life": "background-color:#FFCDD2;color:#B71C1C",
+             "expiring soon": "background-color:#FFE0B2;color:#E65100",
+             "supported": "background-color:#C8E6C9;color:#1B5E20"}
+        return m.get(str(val).lower(), "")
+
+    as_disp = {
+        "App Server": st.column_config.TextColumn("App Server", width=160),
+        "Version": st.column_config.TextColumn("Version", width=100),
+        "Type": st.column_config.TextColumn("Type", width=160),
+        "Mainstream / Premier End": st.column_config.TextColumn("Mainstream End", width=130),
+        "Extended Support End": st.column_config.TextColumn("Extended End", width=120),
+        "Status": st.column_config.TextColumn("Status", width=120),
+        "Notes": st.column_config.TextColumn("Notes", width=220),
+        "Recommendation": st.column_config.TextColumn("💡 Recommendation", width=360),
+        "Upgrade": st.column_config.TextColumn("⬆ Upgrade", width=80),
+        "Replace": st.column_config.TextColumn("🔁 Replace", width=80),
+        "Primary Alternative": st.column_config.TextColumn("Primary Alt", width=150),
+    }
+    if "Risk Score" in view_as.columns:
+        as_disp["Risk Score"] = st.column_config.NumberColumn("🎯 Risk", width=70)
+    if "Risk Level" in view_as.columns:
+        as_disp["Risk Level"] = st.column_config.TextColumn("Risk Level", width=90)
+    if "Days Until EOL" in view_as.columns:
+        as_disp["Days Until EOL"] = st.column_config.NumberColumn("📅 Days to EOL", width=100)
+    hide_cols = [c for c in ["Risk Color"] if c in view_as.columns]
+    if hide_cols: view_as = view_as.drop(columns=hide_cols)
+
+    st.caption(f"Showing {len(view_as)} of {len(as_df)} App Server entries")
+    st.dataframe(
+        view_as.style.map(_style_as_status, subset=["Status"]) if "Status" in view_as.columns else view_as,
+        width="stretch", height=520, hide_index=True, column_config=as_disp
+    )
+
+
+# ────────────────── Tab: Frameworks ───────────────────────────────────────────
+with tab_fw:
+    fw_df = st.session_state.fw_df
+    st.subheader("📦 Framework & Runtime Versions")
+    st.caption("Lifecycle tracking for .NET, React, Angular, Spring Boot, Node.js, Java, Python, PHP and more")
+
+    fm1, fm2, fm3, fm4 = st.columns(4)
+    eol_fw = (fw_df.get("Status", pd.Series(dtype=str)).str.lower() == "end of life").sum()
+    exp_fw = (fw_df.get("Status", pd.Series(dtype=str)).str.lower() == "expiring soon").sum()
+    sup_fw = (fw_df.get("Status", pd.Series(dtype=str)).str.lower() == "supported").sum()
+    with fm1: st.metric("Total Frameworks", len(fw_df))
+    with fm2: st.metric("🔴 End of Life", int(eol_fw))
+    with fm3: st.metric("🟡 Expiring Soon", int(exp_fw))
+    with fm4: st.metric("🟢 Supported", int(sup_fw))
+
+    with st.expander("🔍 Filters", expanded=False):
+        ff1, ff2, ff3 = st.columns(3)
+        with ff1:
+            fw_names = ["All"] + sorted(fw_df["Framework"].dropna().unique().tolist())
+            fw_f = st.selectbox("Framework", fw_names, key="fw_filter")
+        with ff2:
+            fw_types = ["All"] + sorted(fw_df["Type"].dropna().unique().tolist())
+            fw_type_f = st.selectbox("Type", fw_types, key="fw_type_filter")
+        with ff3:
+            fw_statuses = ["All"] + sorted(fw_df["Status"].dropna().unique().tolist())
+            fw_stat_f = st.selectbox("Status", fw_statuses, key="fw_stat_filter")
+
+    view_fw = fw_df.copy()
+    if fw_f != "All": view_fw = view_fw[view_fw["Framework"] == fw_f]
+    if fw_type_f != "All": view_fw = view_fw[view_fw["Type"] == fw_type_f]
+    if fw_stat_f != "All": view_fw = view_fw[view_fw["Status"] == fw_stat_f]
+
+    def _style_fw_status(val):
+        m = {"end of life": "background-color:#FFCDD2;color:#B71C1C",
+             "expiring soon": "background-color:#FFE0B2;color:#E65100",
+             "supported": "background-color:#C8E6C9;color:#1B5E20",
+             "future": "background-color:#E3F2FD;color:#0D47A1"}
+        return m.get(str(val).lower(), "")
+
+    fw_disp = {
+        "Framework": st.column_config.TextColumn("Framework", width=160),
+        "Version": st.column_config.TextColumn("Version", width=120),
+        "Type": st.column_config.TextColumn("Type", width=160),
+        "Mainstream / Premier End": st.column_config.TextColumn("Mainstream End", width=130),
+        "Extended Support End": st.column_config.TextColumn("Extended End", width=120),
+        "Status": st.column_config.TextColumn("Status", width=120),
+        "Notes": st.column_config.TextColumn("Notes", width=220),
+        "Recommendation": st.column_config.TextColumn("💡 Recommendation", width=360),
+        "Upgrade": st.column_config.TextColumn("⬆ Upgrade", width=80),
+        "Replace": st.column_config.TextColumn("🔁 Replace", width=80),
+        "Primary Alternative": st.column_config.TextColumn("Primary Alt", width=150),
+    }
+    if "Risk Score" in view_fw.columns:
+        fw_disp["Risk Score"] = st.column_config.NumberColumn("🎯 Risk", width=70)
+    if "Risk Level" in view_fw.columns:
+        fw_disp["Risk Level"] = st.column_config.TextColumn("Risk Level", width=90)
+    if "Days Until EOL" in view_fw.columns:
+        fw_disp["Days Until EOL"] = st.column_config.NumberColumn("📅 Days to EOL", width=100)
+    hide_cols = [c for c in ["Risk Color"] if c in view_fw.columns]
+    if hide_cols: view_fw = view_fw.drop(columns=hide_cols)
+
+    st.caption(f"Showing {len(view_fw)} of {len(fw_df)} Framework entries")
+    st.dataframe(
+        view_fw.style.map(_style_fw_status, subset=["Status"]) if "Status" in view_fw.columns else view_fw,
+        width="stretch", height=520, hide_index=True, column_config=fw_disp
+    )
 
 
 # ────────────────── Tab 5: Agent 5 Policy Analysis ────────────────────────────
@@ -1369,63 +1556,53 @@ with tab_a5:
                     st.stop()
                 st.rerun()
 
-            # OS analysis
-            if not st.session_state.get("a5_os_done"):
-                agent5     = PolicyAnalysisAgent(api_key=api_key)
-                principles = st.session_state.a5_principles
-                costs      = st.session_state.a5_costs
-                context    = st.session_state.a5_context
-                total_os   = len(st.session_state.os_df)
-                _log("🧠", f"**Step 2/4 — Generating Final Recommendations for {total_os} OS entries...**")
+            # Analysis steps: OS → DB → WS → AS → FW
+            _a5_steps = [
+                ("a5_os_done", "os_df", "OS", "analyse_os", 2),
+                ("a5_db_done", "db_df", "DB", "analyse_db", 3),
+                ("a5_ws_done", "ws_df", "WS", "analyse_ws", 4),
+                ("a5_as_done", "as_df", "AS", "analyse_as", 5),
+                ("a5_fw_done", "fw_df", "FW", "analyse_fw", 6),
+            ]
+            total_steps = len(_a5_steps) + 2  # +1 preflight, +1 wrapup = 7
 
-                live = st.empty()
-                def os5_cb(pct, msg):
-                    prog_bar.progress(min(pct*0.5, 0.5), text=msg)
-                    live.info(f"⏳ {msg}")
+            for done_key, df_key, kind_label, method_name, step_num in _a5_steps:
+                if not st.session_state.get(done_key):
+                    agent5     = PolicyAnalysisAgent(api_key=api_key)
+                    principles = st.session_state.a5_principles
+                    costs      = st.session_state.a5_costs
+                    context    = st.session_state.a5_context
+                    cur_df     = st.session_state[df_key]
+                    _log("🧠", f"**Step {step_num}/{total_steps} — Final Recommendations for {len(cur_df)} {kind_label} entries...**")
 
-                new_os = agent5.analyse_os(st.session_state.os_df, principles, costs, context, os5_cb)
-                st.session_state.os_df    = new_os
-                st.session_state.a5_os_done = True
-                # Persist Final Recommendations to SQLite
-                save_os_df(new_os)
+                    _live = st.empty()
+                    frac_start = (step_num - 2) / (total_steps - 2)
+                    frac_end   = (step_num - 1) / (total_steps - 2)
+                    def _make_cb(fs=frac_start, fe=frac_end):
+                        def cb(pct, msg):
+                            prog_bar.progress(min(fs + pct * (fe - fs), 1.0), text=msg)
+                            _live.info(f"⏳ {msg}")
+                        return cb
 
-                if "Analysis Source" in new_os.columns:
-                    ai_c = (new_os["Analysis Source"] == "OpenAI").sum()
-                    rb_c = (new_os["Analysis Source"] == "Rule-based").sum()
-                    _log("✅" if rb_c == 0 else "⚠️",
-                         f"**OS done** — OpenAI: {ai_c} rows ✅" +
-                         (f" | Rule-based fallback: {rb_c} rows" if rb_c else ""))
-                st.rerun()
+                    analyse_fn = getattr(agent5, method_name)
+                    new_df = analyse_fn(cur_df, principles, costs, context, _make_cb())
+                    st.session_state[df_key] = new_df
+                    st.session_state[done_key] = True
+                    # Persist OS/DB to SQLite
+                    if df_key == "os_df":
+                        save_os_df(new_df)
+                    elif df_key == "db_df":
+                        save_db_df(new_df)
 
-            # DB analysis
-            if not st.session_state.get("a5_db_done"):
-                agent5     = PolicyAnalysisAgent(api_key=api_key)
-                principles = st.session_state.a5_principles
-                costs      = st.session_state.a5_costs
-                context    = st.session_state.a5_context
-                total_db   = len(st.session_state.db_df)
-                _log("🧠", f"**Step 3/4 — Generating Final Recommendations for {total_db} DB entries...**")
+                    if "Analysis Source" in new_df.columns:
+                        ai_c = (new_df["Analysis Source"] == "OpenAI").sum()
+                        rb_c = (new_df["Analysis Source"] == "Rule-based").sum()
+                        _log("✅" if rb_c == 0 else "⚠️",
+                             f"**{kind_label} done** — OpenAI: {ai_c} rows ✅" +
+                             (f" | Rule-based fallback: {rb_c} rows" if rb_c else ""))
+                    st.rerun()
 
-                live2 = st.empty()
-                def db5_cb(pct, msg):
-                    prog_bar.progress(min(0.5 + pct*0.5, 1.0), text=msg)
-                    live2.info(f"⏳ {msg}")
-
-                new_db = agent5.analyse_db(st.session_state.db_df, principles, costs, context, db5_cb)
-                st.session_state.db_df    = new_db
-                st.session_state.a5_db_done = True
-                # Persist Final Recommendations to SQLite
-                save_db_df(new_db)
-
-                if "Analysis Source" in new_db.columns:
-                    ai_c = (new_db["Analysis Source"] == "OpenAI").sum()
-                    rb_c = (new_db["Analysis Source"] == "Rule-based").sum()
-                    _log("✅" if rb_c == 0 else "⚠️",
-                         f"**DB done** — OpenAI: {ai_c} rows ✅" +
-                         (f" | Rule-based fallback: {rb_c} rows" if rb_c else ""))
-                st.rerun()
-
-            _log("🏁", "**Step 4/4 — Final Recommendations complete. New sheet added to Excel export.**")
+            _log("🏁", f"**Step {total_steps}/{total_steps} — Final Recommendations complete for all categories.**")
             st.session_state.a5_status         = "done"
             st.session_state.a5_preflight_done = False
             st.session_state.a5_log            = []
@@ -1480,6 +1657,9 @@ with tab_a5:
                     st.session_state.a5_status   = "chatting"
                     st.session_state.a5_os_done  = False
                     st.session_state.a5_db_done  = False
+                    st.session_state.a5_ws_done  = False
+                    st.session_state.a5_as_done  = False
+                    st.session_state.a5_fw_done  = False
                     st.rerun()
             with col_reset:
                 if st.button("🔄 Start fresh with new policy", width="stretch"):
@@ -1647,77 +1827,51 @@ with tab_a5:
                     st.stop()
                 st.rerun()   # rerun to show checkpoint before continuing
 
-            # ── Step 2: OS Analysis ───────────────────────────────────────────
-            if not st.session_state.get("a5_os_done"):
-                agent5     = PolicyAnalysisAgent(api_key=api_key)
-                principles = st.session_state.a5_principles
-                costs      = st.session_state.a5_costs
-                total_os   = len(st.session_state.os_df)
-                _log("🧠", f"**Step 2/4 — OpenAI analysing {total_os} OS entries** (batches of 15)...")
+            # ── Steps 2-6: OS → DB → WS → AS → FW Analysis ─────────────────
+            _a5_steps2 = [
+                ("a5_os_done", "os_df", "OS", "analyse_os", 2),
+                ("a5_db_done", "db_df", "DB", "analyse_db", 3),
+                ("a5_ws_done", "ws_df", "WS", "analyse_ws", 4),
+                ("a5_as_done", "as_df", "AS", "analyse_as", 5),
+                ("a5_fw_done", "fw_df", "FW", "analyse_fw", 6),
+            ]
+            total_steps2 = len(_a5_steps2) + 2  # +1 preflight, +1 wrapup
 
-                batch_log = st.empty()
-                ai_batches = 0
-                rb_batches = 0
+            for done_key, df_key, kind_label, method_name, step_num in _a5_steps2:
+                if not st.session_state.get(done_key):
+                    agent5     = PolicyAnalysisAgent(api_key=api_key)
+                    principles = st.session_state.a5_principles
+                    costs      = st.session_state.a5_costs
+                    cur_df     = st.session_state[df_key]
+                    _log("🧠", f"**Step {step_num}/{total_steps2} — OpenAI analysing {len(cur_df)} {kind_label} entries** (batches of 15)...")
 
-                def os5_cb(pct, msg):
-                    prog_bar.progress(min(pct * 0.5, 0.5), text=msg)
-                    batch_log.info(f"⏳ {msg}")
-                    if "OpenAI:" in msg:
-                        # Extract counts from final summary message
-                        pass
+                    _live2 = st.empty()
+                    frac_s = (step_num - 2) / (total_steps2 - 2)
+                    frac_e = (step_num - 1) / (total_steps2 - 2)
+                    def _make_cb2(fs=frac_s, fe=frac_e):
+                        def cb(pct, msg):
+                            prog_bar.progress(min(fs + pct * (fe - fs), 1.0), text=msg)
+                            _live2.info(f"⏳ {msg}")
+                        return cb
 
-                new_os = agent5.analyse_os(
-                    st.session_state.os_df, principles, costs, os5_cb)
-                st.session_state.os_df    = new_os
-                st.session_state.a5_os_done = True
+                    analyse_fn = getattr(agent5, method_name)
+                    new_df = analyse_fn(cur_df, principles, costs, _make_cb2())
+                    st.session_state[df_key] = new_df
+                    st.session_state[done_key] = True
 
-                # Count results
-                if "Analysis Source" in new_os.columns:
-                    ai_c = (new_os["Analysis Source"] == "OpenAI").sum()
-                    rb_c = (new_os["Analysis Source"] == "Rule-based").sum()
-                    if rb_c == 0:
-                        _log("✅", f"**OS Analysis complete** — OpenAI analysed all **{ai_c} OS rows** ✅")
-                    elif ai_c == 0:
-                        _log("⚠️", f"**OS Analysis complete** — ⚠️ OpenAI failed all batches. Rule-based used for {rb_c} rows. Check quota.")
+                    if "Analysis Source" in new_df.columns:
+                        ai_c = (new_df["Analysis Source"] == "OpenAI").sum()
+                        rb_c = (new_df["Analysis Source"] == "Rule-based").sum()
+                        if rb_c == 0:
+                            _log("✅", f"**{kind_label} Analysis complete** — OpenAI analysed all **{ai_c} rows** ✅")
+                        elif ai_c == 0:
+                            _log("⚠️", f"**{kind_label} Analysis complete** — ⚠️ OpenAI failed. Rule-based used for {rb_c} rows.")
+                        else:
+                            _log("⚠️", f"**{kind_label} Analysis complete** — OpenAI: {ai_c} rows ✅ | Rule-based: {rb_c} rows ⚠️")
                     else:
-                        _log("⚠️", f"**OS Analysis complete** — OpenAI: {ai_c} rows ✅ | Rule-based fallback: {rb_c} rows ⚠️")
-                else:
-                    _log("✅", f"**OS Analysis complete** — {total_os} rows processed")
+                        _log("✅", f"**{kind_label} Analysis complete** — {len(cur_df)} rows processed")
 
-                st.rerun()   # rerun to show checkpoint before DB analysis
-
-            # ── Step 3: DB Analysis ───────────────────────────────────────────
-            if not st.session_state.get("a5_db_done"):
-                agent5     = PolicyAnalysisAgent(api_key=api_key)
-                principles = st.session_state.a5_principles
-                costs      = st.session_state.a5_costs
-                total_db   = len(st.session_state.db_df)
-                _log("🧠", f"**Step 3/4 — OpenAI analysing {total_db} DB entries** (batches of 15)...")
-
-                batch_log2 = st.empty()
-
-                def db5_cb(pct, msg):
-                    prog_bar.progress(min(0.5 + pct * 0.5, 1.0), text=msg)
-                    batch_log2.info(f"⏳ {msg}")
-
-                new_db = agent5.analyse_db(
-                    st.session_state.db_df, principles, costs, db5_cb)
-                st.session_state.db_df    = new_db
-                st.session_state.a5_db_done = True
-
-                if "Analysis Source" in new_db.columns:
-                    ai_c = (new_db["Analysis Source"] == "OpenAI").sum()
-                    rb_c = (new_db["Analysis Source"] == "Rule-based").sum()
-                    if rb_c == 0:
-                        _log("✅", f"**DB Analysis complete** — OpenAI analysed all **{ai_c} DB rows** ✅")
-                    elif ai_c == 0:
-                        _log("⚠️", f"**DB Analysis complete** — ⚠️ OpenAI failed all batches. Rule-based used for {rb_c} rows.")
-                    else:
-                        _log("⚠️", f"**DB Analysis complete** — OpenAI: {ai_c} rows ✅ | Rule-based fallback: {rb_c} rows ⚠️")
-                else:
-                    _log("✅", f"**DB Analysis complete** — {total_db} rows processed")
-
-                st.rerun()   # rerun to show checkpoint before finishing
+                    st.rerun()
 
             # ── Step 4: Wrap up ───────────────────────────────────────────────
             _log("🏁", "**Step 4/4 — Analysis complete. Policy Recommendation + Verdict columns ready.**")

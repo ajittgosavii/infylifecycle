@@ -610,3 +610,237 @@ OS_DATA += [
     _os("OpenVMS x86 V9.2-4",          "2024-06-01","","Active","",              "Latest x86-64","","N","N",""),
 
 ]
+
+
+# =============================================================================
+# WEB SERVER DATA — Lifecycle data for web servers found in inventory
+# =============================================================================
+WS_COLUMNS = [
+    "Web Server", "Version", "Type",
+    "Mainstream / Premier End", "Extended Support End",
+    "Status", "Notes", "Recommendation",
+    "Upgrade", "Replace", "Primary Alternative", "Secondary Alternative"
+]
+
+def _ws(ws, ver, typ, main="", ext="", status="Supported", notes="", rec="", upg="N", repl="N", pri="", sec=""):
+    return {"Web Server": ws, "Version": ver, "Type": typ,
+            "Mainstream / Premier End": main, "Extended Support End": ext,
+            "Status": status, "Notes": notes, "Recommendation": rec,
+            "Upgrade": upg, "Replace": repl, "Primary Alternative": pri, "Secondary Alternative": sec}
+
+WS_DATA = [
+
+    # ── IIS (Microsoft Internet Information Services) ────────────────────────
+    _ws("IIS", "6.0", "Web Server", "2015-07-14", "", "End of Life", "Ships with Windows Server 2003", "", "Y", "N", "IIS 10.0", "Nginx"),
+    _ws("IIS", "7.0", "Web Server", "2015-01-13", "", "End of Life", "Ships with Windows Server 2008", "", "Y", "N", "IIS 10.0", "Nginx"),
+    _ws("IIS", "7.5", "Web Server", "2015-01-13", "2020-01-14", "End of Life", "Ships with Windows Server 2008 R2", "", "Y", "N", "IIS 10.0", "Nginx"),
+    _ws("IIS", "8.0", "Web Server", "2018-01-09", "2023-01-10", "End of Life", "Ships with Windows Server 2012", "", "Y", "N", "IIS 10.0", "Nginx"),
+    _ws("IIS", "8.5", "Web Server", "2018-10-09", "2023-10-10", "End of Life", "Ships with Windows Server 2012 R2", "", "Y", "N", "IIS 10.0", "Nginx"),
+    _ws("IIS", "10.0", "Web Server", "2027-01-12", "2032-01-13", "Supported", "Ships with Windows Server 2016/2019/2022; lifecycle follows OS", "", "N", "N", "", ""),
+
+    # ── Nginx ────────────────────────────────────────────────────────────────
+    _ws("Nginx", "1.14.x", "Web Server", "2019-04-23", "", "End of Life", "Legacy stable branch", "", "Y", "N", "Nginx 1.28.x", "Apache 2.4.x"),
+    _ws("Nginx", "1.16.x", "Web Server", "2020-04-14", "", "End of Life", "Stable branch 2019", "", "Y", "N", "Nginx 1.28.x", "Apache 2.4.x"),
+    _ws("Nginx", "1.17.x", "Web Server", "2020-04-21", "", "End of Life", "Mainline branch 2019", "", "Y", "N", "Nginx 1.28.x", ""),
+    _ws("Nginx", "1.18.x", "Web Server", "2021-04-13", "", "End of Life", "Stable branch 2020", "", "Y", "N", "Nginx 1.28.x", ""),
+    _ws("Nginx", "1.19.x", "Web Server", "2021-05-25", "", "End of Life", "Mainline branch 2020", "", "Y", "N", "Nginx 1.28.x", ""),
+    _ws("Nginx", "1.20.x", "Web Server", "2022-04-19", "", "End of Life", "Stable branch 2021", "", "Y", "N", "Nginx 1.28.x", ""),
+    _ws("Nginx", "1.22.x", "Web Server", "2023-06-13", "", "End of Life", "Stable branch 2022", "", "Y", "N", "Nginx 1.28.x", ""),
+    _ws("Nginx", "1.23.x", "Web Server", "2023-06-13", "", "End of Life", "Mainline branch 2022", "", "Y", "N", "Nginx 1.28.x", ""),
+    _ws("Nginx", "1.24.x", "Web Server", "2025-04-15", "", "Expiring Soon", "Stable branch 2023", "", "Y", "N", "Nginx 1.28.x", ""),
+    _ws("Nginx", "1.26.x", "Web Server", "2026-06-01", "", "Supported", "Stable branch 2024", "", "N", "N", "", ""),
+    _ws("Nginx", "1.27.x", "Web Server", "2026-06-01", "", "Supported", "Mainline branch 2024", "", "N", "N", "Nginx 1.28.x", ""),
+    _ws("Nginx", "1.28.x", "Web Server", "2027-06-01", "", "Supported", "Latest mainline 2025", "", "N", "N", "", ""),
+
+    # ── Apache HTTP Server ───────────────────────────────────────────────────
+    _ws("Apache", "2.2.x", "Web Server", "2017-07-11", "", "End of Life", "EOL since 2017; no security patches", "", "Y", "N", "Apache 2.4.x", "Nginx 1.28.x"),
+    _ws("Apache", "2.4.6", "Web Server", "2024-06-30", "", "End of Life", "Shipped with RHEL 7; follows OS EOL", "", "Y", "N", "Apache 2.4.63", "Nginx 1.28.x"),
+    _ws("Apache", "2.4.37", "Web Server", "2029-05-31", "", "Supported", "Shipped with RHEL 8; follows OS EOL", "", "N", "N", "Apache 2.4.63", ""),
+    _ws("Apache", "2.4.39", "Web Server", "2029-05-31", "", "Supported", "RHEL 8 variant", "", "N", "N", "Apache 2.4.63", ""),
+    _ws("Apache", "2.4.46", "Web Server", "2029-05-31", "", "Supported", "RHEL 8 / SLES 15 variant", "", "N", "N", "Apache 2.4.63", ""),
+    _ws("Apache", "2.4.54", "Web Server", "2032-06-30", "", "Supported", "Shipped with RHEL 9 / Debian 12", "", "N", "N", "Apache 2.4.63", ""),
+    _ws("Apache", "2.4.55", "Web Server", "2032-06-30", "", "Supported", "Upstream stable release", "", "N", "N", "Apache 2.4.63", ""),
+    _ws("Apache", "2.4.59", "Web Server", "2032-06-30", "", "Supported", "Upstream stable 2024", "", "N", "N", "Apache 2.4.63", ""),
+    _ws("Apache", "2.4.62", "Web Server", "2032-06-30", "", "Supported", "Upstream stable 2024", "", "N", "N", "Apache 2.4.63", ""),
+    _ws("Apache", "2.4.63", "Web Server", "2032-06-30", "", "Supported", "Latest upstream stable 2025", "", "N", "N", "", ""),
+
+]
+
+
+# =============================================================================
+# APPLICATION SERVER DATA — Lifecycle data for app servers found in inventory
+# =============================================================================
+AS_COLUMNS = [
+    "App Server", "Version", "Type",
+    "Mainstream / Premier End", "Extended Support End",
+    "Status", "Notes", "Recommendation",
+    "Upgrade", "Replace", "Primary Alternative", "Secondary Alternative"
+]
+
+def _as(asrv, ver, typ, main="", ext="", status="Supported", notes="", rec="", upg="N", repl="N", pri="", sec=""):
+    return {"App Server": asrv, "Version": ver, "Type": typ,
+            "Mainstream / Premier End": main, "Extended Support End": ext,
+            "Status": status, "Notes": notes, "Recommendation": rec,
+            "Upgrade": upg, "Replace": repl, "Primary Alternative": pri, "Secondary Alternative": sec}
+
+AS_DATA = [
+
+    # ── Apache Tomcat ────────────────────────────────────────────────────────
+    _as("Tomcat", "7.0.x", "Application Server", "2021-03-31", "", "End of Life", "Java EE 6/Servlet 3.0; no patches", "", "Y", "N", "Tomcat 10.1.x", "Tomcat 9.0.x"),
+    _as("Tomcat", "8.5.x", "Application Server", "2024-03-31", "", "End of Life", "Java EE 7/Servlet 3.1; EOL Mar 2024", "", "Y", "N", "Tomcat 10.1.x", "Tomcat 9.0.x"),
+    _as("Tomcat", "9.0.x", "Application Server", "2028-01-01", "", "Supported", "Java EE 8/Servlet 4.0; Jakarta EE transition", "", "N", "N", "Tomcat 10.1.x", ""),
+    _as("Tomcat", "10.1.x", "Application Server", "2031-01-01", "", "Supported", "Jakarta EE 10/Servlet 6.0; current stable", "", "N", "N", "", ""),
+    _as("Tomcat", "11.0.x", "Application Server", "2034-01-01", "", "Supported", "Jakarta EE 11; latest release", "", "N", "N", "", ""),
+
+    # ── JBoss / WildFly (Red Hat) ────────────────────────────────────────────
+    _as("JBoss EAP", "6.x", "Application Server", "2019-06-30", "2022-06-30", "End of Life", "Java EE 6; no patches", "", "Y", "N", "JBoss EAP 8.0", "WildFly 33"),
+    _as("JBoss EAP", "7.4.x", "Application Server", "2027-06-30", "2029-06-30", "Supported", "Java EE 8 / Jakarta EE 8; current LTS", "", "N", "N", "JBoss EAP 8.0", ""),
+    _as("JBoss EAP", "8.0", "Application Server", "2029-06-30", "2031-06-30", "Supported", "Jakarta EE 10; latest", "", "N", "N", "", ""),
+    _as("WildFly", "15.x", "Application Server", "2019-12-31", "", "End of Life", "Community; superseded", "", "Y", "N", "WildFly 33", "JBoss EAP 8.0"),
+    _as("WildFly", "19.x", "Application Server", "2021-06-30", "", "End of Life", "Community; superseded", "", "Y", "N", "WildFly 33", "JBoss EAP 8.0"),
+    _as("WildFly", "33.x", "Application Server", "2026-06-30", "", "Supported", "Community; Jakarta EE 10", "", "N", "N", "", ""),
+
+    # ── IBM WebSphere ────────────────────────────────────────────────────────
+    _as("WebSphere", "8.5.x", "Application Server", "2024-04-30", "2030-04-30", "Expiring Soon", "Traditional WAS; extended support", "", "Y", "N", "WebSphere Liberty", "Tomcat 10.1.x"),
+    _as("WebSphere", "9.0.x", "Application Server", "2027-09-30", "2030-09-30", "Supported", "Traditional WAS 9", "", "N", "N", "WebSphere Liberty", ""),
+    _as("WebSphere Liberty", "Current", "Application Server", "", "", "Supported", "Continuous delivery; lightweight; cloud-native", "", "N", "N", "", ""),
+
+    # ── Apache Kafka ─────────────────────────────────────────────────────────
+    _as("Kafka", "2.8.x", "Message Broker", "2023-06-30", "", "End of Life", "KRaft preview; superseded", "", "Y", "N", "Kafka 3.8.x", ""),
+    _as("Kafka", "3.1.x", "Message Broker", "2024-01-01", "", "End of Life", "Superseded; no patches", "", "Y", "N", "Kafka 3.8.x", ""),
+    _as("Kafka", "3.x (latest)", "Message Broker", "2026-06-30", "", "Supported", "KRaft GA; current stable", "", "N", "N", "", ""),
+
+    # ── RabbitMQ ─────────────────────────────────────────────────────────────
+    _as("RabbitMQ", "3.8.x", "Message Broker", "2022-07-31", "", "End of Life", "No security patches", "", "Y", "N", "RabbitMQ 3.13.x", ""),
+    _as("RabbitMQ", "3.11.x", "Message Broker", "2023-12-31", "", "End of Life", "Superseded", "", "Y", "N", "RabbitMQ 3.13.x", ""),
+    _as("RabbitMQ", "3.12.x", "Message Broker", "2024-12-31", "", "Expiring Soon", "Community support only", "", "Y", "N", "RabbitMQ 3.13.x", ""),
+    _as("RabbitMQ", "3.13.x", "Message Broker", "2025-12-31", "", "Supported", "Current stable release", "", "N", "N", "", ""),
+
+    # ── Apache Solr ──────────────────────────────────────────────────────────
+    _as("Solr", "8.x", "Search Engine", "2024-03-31", "", "End of Life", "Java 8/11; superseded by 9.x", "", "Y", "N", "Solr 9.6.x", "Elasticsearch"),
+    _as("Solr", "9.6.x", "Search Engine", "2027-01-01", "", "Supported", "Current stable; Java 11+", "", "N", "N", "", ""),
+
+    # ── Logstash / Elastic Stack ─────────────────────────────────────────────
+    _as("Logstash", "7.x", "Data Pipeline", "2024-08-01", "", "End of Life", "Elastic 7.x EOL Aug 2024", "", "Y", "N", "Logstash 8.x", ""),
+    _as("Logstash", "8.x", "Data Pipeline", "2026-12-31", "", "Supported", "Current Elastic Stack release", "", "N", "N", "", ""),
+
+    # ── Apache ZooKeeper ─────────────────────────────────────────────────────
+    _as("ZooKeeper", "3.5.x", "Coordination Service", "2022-06-01", "", "End of Life", "No patches; use 3.8+", "", "Y", "N", "ZooKeeper 3.8.x", ""),
+    _as("ZooKeeper", "3.8.x", "Coordination Service", "2026-06-01", "", "Supported", "Current stable LTS", "", "N", "N", "", ""),
+
+    # ── Kubernetes ───────────────────────────────────────────────────────────
+    _as("Kubernetes", "1.25.x", "Container Orchestrator", "2023-10-27", "", "End of Life", "14-month support window ended", "", "Y", "N", "Kubernetes 1.31.x", ""),
+    _as("Kubernetes", "1.28.x", "Container Orchestrator", "2024-10-28", "", "End of Life", "14-month support window ended", "", "Y", "N", "Kubernetes 1.31.x", ""),
+    _as("Kubernetes", "1.30.x", "Container Orchestrator", "2025-06-28", "", "Expiring Soon", "14-month support window", "", "Y", "N", "Kubernetes 1.31.x", ""),
+    _as("Kubernetes", "1.31.x", "Container Orchestrator", "2025-10-28", "", "Supported", "Current stable", "", "N", "N", "", ""),
+    _as("Kubernetes", "1.32.x", "Container Orchestrator", "2026-02-28", "", "Supported", "Latest release", "", "N", "N", "", ""),
+
+    # ── SAP Application Server ───────────────────────────────────────────────
+    _as("SAP NetWeaver", "7.x", "Application Server", "2027-12-31", "2030-12-31", "Supported", "SAP ERP/S4; mainstream until 2027", "", "N", "N", "SAP BTP", ""),
+
+]
+
+
+# =============================================================================
+# FRAMEWORK DATA — Lifecycle data for development frameworks
+# =============================================================================
+FW_COLUMNS = [
+    "Framework", "Version", "Type",
+    "Mainstream / Premier End", "Extended Support End",
+    "Status", "Notes", "Recommendation",
+    "Upgrade", "Replace", "Primary Alternative", "Secondary Alternative"
+]
+
+def _fw(fw, ver, typ, main="", ext="", status="Supported", notes="", rec="", upg="N", repl="N", pri="", sec=""):
+    return {"Framework": fw, "Version": ver, "Type": typ,
+            "Mainstream / Premier End": main, "Extended Support End": ext,
+            "Status": status, "Notes": notes, "Recommendation": rec,
+            "Upgrade": upg, "Replace": repl, "Primary Alternative": pri, "Secondary Alternative": sec}
+
+FW_DATA = [
+
+    # ── .NET Framework (Windows-only) ────────────────────────────────────────
+    _fw(".NET Framework", "3.5 SP1", "Runtime", "2028-10-10", "", "Supported", "Ships with Windows; follows OS lifecycle", "", "Y", "N", ".NET 8", ".NET 9"),
+    _fw(".NET Framework", "4.5.x", "Runtime", "2016-01-12", "", "End of Life", "No patches since 2016", "", "Y", "N", ".NET 8", ""),
+    _fw(".NET Framework", "4.6.x", "Runtime", "2027-11-12", "", "Supported", "Follows OS lifecycle", "", "Y", "N", ".NET 8", ""),
+    _fw(".NET Framework", "4.7.x", "Runtime", "2028-01-09", "", "Supported", "Follows OS lifecycle", "", "Y", "N", ".NET 8", ""),
+    _fw(".NET Framework", "4.8.x", "Runtime", "2032-01-13", "", "Supported", "Final .NET Framework; ships with Server 2022", "", "N", "N", ".NET 8", ""),
+
+    # ── .NET (cross-platform, formerly .NET Core) ────────────────────────────
+    _fw(".NET", "3.1 (Core)", "Runtime", "2022-12-13", "", "End of Life", "LTS ended Dec 2022", "", "Y", "N", ".NET 8", ""),
+    _fw(".NET", "5.0", "Runtime", "2022-05-10", "", "End of Life", "STS; ended May 2022", "", "Y", "N", ".NET 8", ""),
+    _fw(".NET", "6.0", "Runtime", "2024-11-12", "", "End of Life", "LTS ended Nov 2024", "", "Y", "N", ".NET 8", ".NET 9"),
+    _fw(".NET", "7.0", "Runtime", "2024-05-14", "", "End of Life", "STS ended May 2024", "", "Y", "N", ".NET 8", ""),
+    _fw(".NET", "8.0", "Runtime", "2026-11-10", "", "Supported", "LTS; current recommended", "", "N", "N", "", ""),
+    _fw(".NET", "9.0", "Runtime", "2026-05-12", "", "Supported", "STS; latest release", "", "N", "N", ".NET 10", ""),
+    _fw(".NET", "10.0", "Runtime", "2028-11-14", "", "Future", "LTS; expected Nov 2025 release", "", "N", "N", "", ""),
+
+    # ── Spring Boot ──────────────────────────────────────────────────────────
+    _fw("Spring Boot", "1.5.x", "Java Framework", "2019-08-01", "", "End of Life", "No patches since Aug 2019", "", "Y", "N", "Spring Boot 3.4.x", ""),
+    _fw("Spring Boot", "2.3.x", "Java Framework", "2021-05-20", "", "End of Life", "OSS support ended May 2021", "", "Y", "N", "Spring Boot 3.4.x", ""),
+    _fw("Spring Boot", "2.7.x", "Java Framework", "2023-11-24", "2025-08-24", "Expiring Soon", "Commercial support via Tanzu; OSS ended", "", "Y", "N", "Spring Boot 3.4.x", ""),
+    _fw("Spring Boot", "3.0.x", "Java Framework", "2023-11-24", "", "End of Life", "Jakarta EE 9 baseline; OSS ended", "", "Y", "N", "Spring Boot 3.4.x", ""),
+    _fw("Spring Boot", "3.3.x", "Java Framework", "2025-05-22", "2026-08-22", "Supported", "Current GA; Jakarta EE 10", "", "N", "N", "Spring Boot 3.4.x", ""),
+    _fw("Spring Boot", "3.4.x", "Java Framework", "2025-11-20", "2027-02-20", "Supported", "Latest release; Jakarta EE 10", "", "N", "N", "", ""),
+
+    # ── PHP ──────────────────────────────────────────────────────────────────
+    _fw("PHP", "7.2.x", "Runtime", "2020-11-30", "", "End of Life", "No security patches since Nov 2020", "", "Y", "N", "PHP 8.3", "PHP 8.4"),
+    _fw("PHP", "7.4.x", "Runtime", "2022-11-28", "", "End of Life", "Last PHP 7; EOL Nov 2022", "", "Y", "N", "PHP 8.3", "PHP 8.4"),
+    _fw("PHP", "8.0.x", "Runtime", "2023-11-26", "", "End of Life", "EOL Nov 2023", "", "Y", "N", "PHP 8.3", "PHP 8.4"),
+    _fw("PHP", "8.1.x", "Runtime", "2025-12-31", "", "Expiring Soon", "Security fixes only until Dec 2025", "", "Y", "N", "PHP 8.3", "PHP 8.4"),
+    _fw("PHP", "8.2.x", "Runtime", "2026-12-31", "", "Supported", "Active support until Dec 2025; security until Dec 2026", "", "N", "N", "PHP 8.4", ""),
+    _fw("PHP", "8.3.x", "Runtime", "2027-12-31", "", "Supported", "Current stable; active support", "", "N", "N", "", ""),
+    _fw("PHP", "8.4.x", "Runtime", "2028-12-31", "", "Supported", "Latest release 2024", "", "N", "N", "", ""),
+
+    # ── React ────────────────────────────────────────────────────────────────
+    _fw("React", "16.x", "JavaScript Library", "2022-03-29", "", "End of Life", "No new patches; security only via React 18", "", "Y", "N", "React 19", "React 18"),
+    _fw("React", "17.x", "JavaScript Library", "2022-03-29", "", "End of Life", "Stepping stone release; no patches", "", "Y", "N", "React 19", "React 18"),
+    _fw("React", "18.x", "JavaScript Library", "2025-12-31", "", "Supported", "Concurrent features; hooks-based", "", "N", "N", "React 19", ""),
+    _fw("React", "19.x", "JavaScript Library", "2027-12-31", "", "Supported", "Latest release; Server Components", "", "N", "N", "", ""),
+
+    # ── Angular ──────────────────────────────────────────────────────────────
+    _fw("Angular", "12.x", "JavaScript Framework", "2022-11-12", "", "End of Life", "LTS ended Nov 2022", "", "Y", "N", "Angular 18", "React 19"),
+    _fw("Angular", "14.x", "JavaScript Framework", "2023-11-18", "", "End of Life", "LTS ended Nov 2023", "", "Y", "N", "Angular 18", ""),
+    _fw("Angular", "16.x", "JavaScript Framework", "2024-11-08", "", "End of Life", "LTS ended Nov 2024", "", "Y", "N", "Angular 18", ""),
+    _fw("Angular", "17.x", "JavaScript Framework", "2025-05-15", "2025-11-15", "Expiring Soon", "LTS; active support ending", "", "Y", "N", "Angular 18", ""),
+    _fw("Angular", "18.x", "JavaScript Framework", "2025-11-20", "2026-11-20", "Supported", "Current stable LTS", "", "N", "N", "", ""),
+    _fw("Angular", "19.x", "JavaScript Framework", "2026-05-15", "2027-05-15", "Supported", "Latest release", "", "N", "N", "", ""),
+
+    # ── Vue.js ───────────────────────────────────────────────────────────────
+    _fw("Vue.js", "2.x", "JavaScript Framework", "2023-12-31", "", "End of Life", "EOL Dec 2023; no security patches", "", "Y", "N", "Vue.js 3.x", "React 19"),
+    _fw("Vue.js", "3.x", "JavaScript Framework", "2027-12-31", "", "Supported", "Current stable; Composition API", "", "N", "N", "", ""),
+
+    # ── Node.js ──────────────────────────────────────────────────────────────
+    _fw("Node.js", "14.x", "Runtime", "2023-04-30", "", "End of Life", "LTS Fermium; EOL Apr 2023", "", "Y", "N", "Node.js 22.x", ""),
+    _fw("Node.js", "16.x", "Runtime", "2023-09-11", "", "End of Life", "LTS Gallium; EOL Sep 2023", "", "Y", "N", "Node.js 22.x", ""),
+    _fw("Node.js", "18.x", "Runtime", "2025-04-30", "", "Expiring Soon", "LTS Hydrogen; EOL Apr 2025", "", "Y", "N", "Node.js 22.x", ""),
+    _fw("Node.js", "20.x", "Runtime", "2026-04-30", "", "Supported", "LTS Iron; active LTS", "", "N", "N", "Node.js 22.x", ""),
+    _fw("Node.js", "22.x", "Runtime", "2027-04-30", "", "Supported", "LTS Jod; current LTS", "", "N", "N", "", ""),
+
+    # ── Java / OpenJDK ───────────────────────────────────────────────────────
+    _fw("Java", "8 (LTS)", "Runtime", "2030-12-31", "2030-12-31", "Supported", "Oracle extended; Eclipse Temurin supported", "", "Y", "N", "Java 21 LTS", "Java 17 LTS"),
+    _fw("Java", "11 (LTS)", "Runtime", "2026-09-30", "2032-01-31", "Supported", "Oracle premier ended; extended support", "", "Y", "N", "Java 21 LTS", ""),
+    _fw("Java", "17 (LTS)", "Runtime", "2027-09-30", "2030-09-30", "Supported", "LTS; Jakarta EE 10 baseline", "", "N", "N", "Java 21 LTS", ""),
+    _fw("Java", "21 (LTS)", "Runtime", "2031-09-30", "2034-09-30", "Supported", "Current LTS; virtual threads", "", "N", "N", "", ""),
+
+    # ── Python ───────────────────────────────────────────────────────────────
+    _fw("Python", "3.8.x", "Runtime", "2024-10-07", "", "End of Life", "EOL Oct 2024", "", "Y", "N", "Python 3.12", "Python 3.13"),
+    _fw("Python", "3.9.x", "Runtime", "2025-10-05", "", "Expiring Soon", "Security-only; EOL Oct 2025", "", "Y", "N", "Python 3.12", ""),
+    _fw("Python", "3.10.x", "Runtime", "2026-10-04", "", "Supported", "Security-only phase", "", "Y", "N", "Python 3.12", ""),
+    _fw("Python", "3.11.x", "Runtime", "2027-10-24", "", "Supported", "Security-only from Oct 2025", "", "N", "N", "Python 3.13", ""),
+    _fw("Python", "3.12.x", "Runtime", "2028-10-02", "", "Supported", "Current stable; performance improvements", "", "N", "N", "", ""),
+    _fw("Python", "3.13.x", "Runtime", "2029-10-01", "", "Supported", "Latest release; free-threading option", "", "N", "N", "", ""),
+
+    # ── Django ───────────────────────────────────────────────────────────────
+    _fw("Django", "3.2 LTS", "Python Framework", "2024-04-01", "", "End of Life", "LTS ended Apr 2024", "", "Y", "N", "Django 5.2 LTS", ""),
+    _fw("Django", "4.2 LTS", "Python Framework", "2026-04-01", "", "Supported", "Current LTS", "", "N", "N", "Django 5.2 LTS", ""),
+    _fw("Django", "5.2 LTS", "Python Framework", "2028-04-01", "", "Supported", "Latest LTS; Python 3.10+", "", "N", "N", "", ""),
+
+    # ── Ruby on Rails ────────────────────────────────────────────────────────
+    _fw("Ruby on Rails", "6.1.x", "Ruby Framework", "2024-10-01", "", "End of Life", "Security support ended", "", "Y", "N", "Rails 7.2.x", "Rails 8.0.x"),
+    _fw("Ruby on Rails", "7.0.x", "Ruby Framework", "2025-04-01", "", "Expiring Soon", "Security-only", "", "Y", "N", "Rails 7.2.x", ""),
+    _fw("Ruby on Rails", "7.1.x", "Ruby Framework", "2025-10-01", "", "Supported", "Bug fixes + security", "", "N", "N", "Rails 7.2.x", ""),
+    _fw("Ruby on Rails", "7.2.x", "Ruby Framework", "2026-10-01", "", "Supported", "Current stable", "", "N", "N", "", ""),
+    _fw("Ruby on Rails", "8.0.x", "Ruby Framework", "2027-10-01", "", "Supported", "Latest release; Hotwire-first", "", "N", "N", "", ""),
+
+]

@@ -51,6 +51,33 @@ DB_CHECK_TARGETS = [
      "Azure SQL Managed Instance Cosmos DB Databricks Runtime end of support dates 2026"),
 ]
 
+WS_CHECK_TARGETS = [
+    ("IIS Nginx",
+     "IIS 10.0 Nginx latest stable version lifecycle support end dates 2025 2026"),
+    ("Apache HTTP Server",
+     "Apache HTTP Server 2.4 end of life lifecycle dates changed apache.org 2026"),
+]
+
+AS_CHECK_TARGETS = [
+    ("Tomcat JBoss WebSphere",
+     "Apache Tomcat 9 10.1 11 JBoss EAP 7.4 8.0 IBM WebSphere 9 end of life support dates 2025 2026"),
+    ("Kafka RabbitMQ ZooKeeper",
+     "Apache Kafka 3.x RabbitMQ 3.13 ZooKeeper 3.8 end of life support dates 2026"),
+    ("Kubernetes",
+     "Kubernetes 1.30 1.31 1.32 end of life support dates kubernetes.io 2025 2026"),
+]
+
+FW_CHECK_TARGETS = [
+    (".NET Framework and .NET",
+     ".NET Framework 4.8 .NET 8 9 10 lifecycle end of support dates changed microsoft.com 2026"),
+    ("Spring Boot PHP",
+     "Spring Boot 3.3 3.4 PHP 8.2 8.3 8.4 end of life dates changed 2026"),
+    ("React Angular Vue.js Node.js",
+     "React 18 19 Angular 18 19 Vue.js 3 Node.js 20 22 end of life support dates 2026"),
+    ("Java Python Django Rails",
+     "Java JDK 17 21 Python 3.12 3.13 Django 5.2 Ruby on Rails 7 8 support end dates 2026"),
+]
+
 
 class OSDataAgent:
     def __init__(self, api_key: str):
@@ -68,7 +95,10 @@ class OSDataAgent:
         ai_failed  = 0
         all_targets = (
             [("OS", f, q) for f, q in OS_CHECK_TARGETS] +
-            [("DB", f, q) for f, q in DB_CHECK_TARGETS]
+            [("DB", f, q) for f, q in DB_CHECK_TARGETS] +
+            [("WS", f, q) for f, q in WS_CHECK_TARGETS] +
+            [("AS", f, q) for f, q in AS_CHECK_TARGETS] +
+            [("FW", f, q) for f, q in FW_CHECK_TARGETS]
         )
         total = len(all_targets)
 
@@ -168,17 +198,58 @@ If nothing has changed from known dates, return an empty changes array."""
             pass
         return {"family": family, "changes": []}
 
-    def merge_updates_into_df(self, os_df, db_df, updates: dict):
+    def merge_updates_into_df(self, os_df, db_df, updates: dict,
+                              ws_df=None, as_df=None, fw_df=None):
         """
-        Apply web-verified date changes to OS and DB dataframes.
+        Apply web-verified date changes to OS, DB, WS, AS, FW dataframes.
         Updates the Notes column to show [Web verified: value].
-        Returns (updated_os_df, updated_db_df, changes_log).
+        Returns (updated_os_df, updated_db_df, updated_ws_df, updated_as_df, updated_fw_df, changes_log).
         """
         import pandas as pd
 
         os_df   = os_df.copy()
         db_df   = db_df.copy()
+        ws_df   = ws_df.copy() if ws_df is not None else pd.DataFrame()
+        as_df   = as_df.copy() if as_df is not None else pd.DataFrame()
+        fw_df   = fw_df.copy() if fw_df is not None else pd.DataFrame()
         changes = []
+
+        # DB-style column map shared by DB, WS, AS, FW
+        db_col_map = {
+            "Mainstream":  "Mainstream / Premier End",
+            "Extended":    "Extended Support End",
+            "Status":      "Status",
+        }
+
+        def _update_db_style(target_df, name_col, kind_label, name, field, new_value, new_status):
+            """Apply changes to a DB-style dataframe (DB/WS/AS/FW)."""
+            if target_df.empty or name_col not in target_df.columns:
+                return target_df
+            # Build a composite search column
+            if "Version" in target_df.columns:
+                search_col = target_df[name_col] + " " + target_df["Version"]
+            else:
+                search_col = target_df[name_col]
+            mask = (
+                target_df[name_col].str.contains(name, case=False, na=False, regex=False) |
+                search_col.str.contains(name, case=False, na=False, regex=False)
+            )
+            if mask.any():
+                idx = target_df[mask].index[0]
+                col = next((v for k, v in db_col_map.items() if k.lower() in field.lower()),
+                           "Mainstream / Premier End")
+                if col in target_df.columns:
+                    old = target_df.at[idx, col]
+                    if new_value and new_value != old:
+                        target_df.at[idx, col] = new_value
+                        note = str(target_df.at[idx, "Notes"] or "")
+                        target_df.at[idx, "Notes"] = f"{note} [Web: {new_value}]".strip()
+                        changes.append(f"{kind_label}: {name} | {col}: '{old}' → '{new_value}'")
+                if new_status and "Status" in target_df.columns and new_status != target_df.at[idx, "Status"]:
+                    old_s = target_df.at[idx, "Status"]
+                    target_df.at[idx, "Status"] = new_status
+                    changes.append(f"{kind_label}: {name} | Status: '{old_s}' → '{new_status}'")
+            return target_df
 
         for family, result in updates.items():
             if not result.get("changes"):
@@ -191,7 +262,6 @@ If nothing has changed from known dates, return an empty changes array."""
                 field     = change.get("field", "")
                 new_value = change.get("new_value", "")
                 new_status= change.get("status", "")
-                notes_ctx = change.get("notes", "")
 
                 if not name or not new_value:
                     continue
@@ -221,30 +291,18 @@ If nothing has changed from known dates, return an empty changes array."""
 
                 # Try DB dataframe
                 if kind == "DB" or kind == "both":
-                    db_mask = (
-                        db_df["Database"].str.contains(name, case=False, na=False, regex=False) |
-                        (db_df["Database"] + " " + db_df["Version"]).str.contains(
-                            name, case=False, na=False, regex=False
-                        )
-                    )
-                    if db_mask.any():
-                        idx = db_df[db_mask].index[0]
-                        col_map = {
-                            "Mainstream":  "Mainstream / Premier End",
-                            "Extended":    "Extended Support End",
-                            "Status":      "Status",
-                        }
-                        col = next((v for k, v in col_map.items() if k.lower() in field.lower()),
-                                   "Mainstream / Premier End")
-                        old = db_df.at[idx, col]
-                        if new_value and new_value != old:
-                            db_df.at[idx, col] = new_value
-                            note = str(db_df.at[idx, "Notes"] or "")
-                            db_df.at[idx, "Notes"] = f"{note} [Web: {new_value}]".strip()
-                            changes.append(f"DB: {name} | {col}: '{old}' → '{new_value}'")
-                        if new_status and new_status != db_df.at[idx, "Status"]:
-                            old_s = db_df.at[idx, "Status"]
-                            db_df.at[idx, "Status"] = new_status
-                            changes.append(f"DB: {name} | Status: '{old_s}' → '{new_status}'")
+                    db_df = _update_db_style(db_df, "Database", "DB", name, field, new_value, new_status)
 
-        return os_df, db_df, changes
+                # Try WS dataframe
+                if kind == "WS" or kind == "both":
+                    ws_df = _update_db_style(ws_df, "Web Server", "WS", name, field, new_value, new_status)
+
+                # Try AS dataframe
+                if kind == "AS" or kind == "both":
+                    as_df = _update_db_style(as_df, "App Server", "AS", name, field, new_value, new_status)
+
+                # Try FW dataframe
+                if kind == "FW" or kind == "both":
+                    fw_df = _update_db_style(fw_df, "Framework", "FW", name, field, new_value, new_status)
+
+        return os_df, db_df, ws_df, as_df, fw_df, changes

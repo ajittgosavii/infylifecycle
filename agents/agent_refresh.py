@@ -32,18 +32,22 @@ class RefreshAgent:
         return (datetime.now() - last_refresh).days
 
     def render_refresh_banner(self, last_refresh: datetime,
-                               os_count: int, db_count: int) -> bool:
+                               os_count: int, db_count: int,
+                               ws_count: int = 0, as_count: int = 0,
+                               fw_count: int = 0) -> bool:
         """Renders the permission banner. Returns True if user approves."""
         days_ago = self.days_since_refresh(last_refresh)
         last_str = last_refresh.strftime("%d %b %Y at %H:%M")
+        total = os_count + db_count + ws_count + as_count + fw_count
 
         st.warning(
             f"**🔄 Agent 3 — Scheduled Refresh Due**\n\n"
             f"Data was last refreshed **{days_ago} day(s) ago** (on {last_str}).\n"
             f"Refresh interval: **every {REFRESH_INTERVAL_DAYS} days**.\n\n"
-            f"Current dataset: **{os_count} OS entries** · **{db_count} DB entries**.\n\n"
-            f"Approving will re-run **Agent 1** (full web fetch of all OS & DB versions) "
-            f"and **Agent 2** (regenerate all recommendations). Estimated time: 3–5 minutes.",
+            f"Current dataset: **{total} entries** "
+            f"(OS: {os_count} · DB: {db_count} · WS: {ws_count} · AS: {as_count} · FW: {fw_count}).\n\n"
+            f"Approving will re-run **Agent 1** (full web fetch of all versions) "
+            f"and **Agent 2** (regenerate all recommendations). Estimated time: 4–6 minutes.",
             icon="⏰"
         )
 
@@ -58,7 +62,9 @@ class RefreshAgent:
         return approved
 
     def render_status_card(self, last_refresh: Optional[datetime],
-                            os_count: int = 0, db_count: int = 0):
+                            os_count: int = 0, db_count: int = 0,
+                            ws_count: int = 0, as_count: int = 0,
+                            fw_count: int = 0):
         """Sidebar status widget for Agent 3."""
         if last_refresh is None:
             st.info("🕐 No refresh yet. Run Agent 1 to start tracking.")
@@ -75,4 +81,5 @@ class RefreshAgent:
         else:
             st.success(f"✅ Next refresh in {days_left}d. Last: {last_str}")
 
-        st.caption(f"📊 OS: {os_count} rows · DB: {db_count} rows")
+        total = os_count + db_count + ws_count + as_count + fw_count
+        st.caption(f"📊 {total} entries · OS:{os_count} DB:{db_count} WS:{ws_count} AS:{as_count} FW:{fw_count}")

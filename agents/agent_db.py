@@ -65,6 +65,62 @@ BATCH_PROMPT_DB = """Generate recommendations for these database versions. Retur
 Expected format:
 {{"Database Version": "recommendation text", ...}}"""
 
+WS_SYSTEM = f"""You are a senior web infrastructure architect with 25+ years of experience.
+Today is {CURRENT_DATE}.
+
+For each web server entry, generate a concise, actionable 1-2 sentence recommendation based on:
+- Status (End of Life / Expiring Soon / Supported)
+- Support end dates relative to today
+- Version currency and security implications
+- Upgrade path and alternatives listed
+
+Classification guide:
+- End of Life → CRITICAL: Upgrade immediately, cite unpatched CVE risk
+- Expiring Soon → URGENT: Begin upgrade project now
+- Old but supported → PLAN AHEAD: Schedule upgrade during next maintenance window
+- Current stable → SUPPORTED: Monitor for new releases
+Be specific: name exact target versions."""
+
+AS_SYSTEM = f"""You are a senior middleware and application server architect with 25+ years of experience.
+Today is {CURRENT_DATE}.
+
+For each application server / middleware entry, generate a concise, actionable 1-2 sentence recommendation based on:
+- Status (End of Life / Expiring Soon / Supported)
+- Support end dates and vendor lifecycle policies
+- Jakarta EE / Java EE version compatibility implications
+- Container/cloud-native migration opportunities
+
+Classification guide:
+- End of Life → CRITICAL: No patches available, migrate immediately
+- Expiring Soon → URGENT: Plan migration before support ends
+- Supported with newer available → PLAN AHEAD: Evaluate upgrade path
+- Current → SUPPORTED: Monitor vendor announcements
+Be specific: name exact target versions and migration paths."""
+
+FW_SYSTEM = f"""You are a senior software development platform architect with 25+ years of experience.
+Today is {CURRENT_DATE}.
+
+For each framework / runtime entry, generate a concise, actionable 1-2 sentence recommendation based on:
+- Status (End of Life / Expiring Soon / Supported / Future)
+- Support end dates and LTS policies
+- Breaking changes and migration complexity
+- Security patch availability
+
+Classification guide:
+- End of Life → CRITICAL: No security patches, upgrade immediately
+- Expiring Soon → URGENT: Begin migration to current LTS
+- Current non-LTS → PLAN AHEAD: Move to LTS before STS support ends
+- Current LTS → SUPPORTED: Monitor next LTS release
+- Future → MONITOR: Track for greenfield projects
+Be specific: name exact target versions and note breaking changes."""
+
+BATCH_PROMPT_GENERIC = """Generate recommendations for these {kind_label} entries. Return ONLY a valid JSON object mapping the entry key to its recommendation text (no markdown fences, no preamble):
+
+{rows}
+
+Expected format:
+{{"Entry Key": "recommendation text", ...}}"""
+
 
 class RecommendationAgent:
     def __init__(self, api_key: str):
@@ -164,6 +220,54 @@ class RecommendationAgent:
                     f"✅ DB recs complete — OpenAI analysed all {ai_count} rows")
         return df
 
+    # ── Generic recommendations for WS / AS / FW ──────────────────────────────
+    def generate_generic_recommendations(self, df: pd.DataFrame, kind: str,
+                                          name_col: str,
+                                          progress_callback=None) -> pd.DataFrame:
+        """Generate recommendations for WS, AS, or FW dataframes."""
+        df = df.copy()
+        rows      = df.to_dict("records")
+        recs      = {}
+        total     = len(rows)
+        ai_count  = 0
+        rb_count  = 0
+        label     = {"WS": "Web Server", "AS": "App Server", "FW": "Framework"}.get(kind, kind)
+
+        for i in range(0, total, self.batch_size):
+            batch = rows[i:i + self.batch_size]
+            if progress_callback:
+                progress_callback(
+                    i / total,
+                    f"🤖 OpenAI (gpt-4o-mini) — {label}: rows {i+1}–{min(i+self.batch_size, total)} of {total}"
+                )
+            batch_recs, used_ai = self._recommend_batch(batch, kind=kind)
+            recs.update(batch_recs)
+            if used_ai:
+                ai_count += len(batch)
+            else:
+                rb_count += len(batch)
+                if progress_callback:
+                    progress_callback(i / total,
+                        f"⚠️ {label} batch {i+1}–{min(i+self.batch_size,total)}: "
+                        f"OpenAI failed — rule-based fallback used")
+
+        for idx, row in df.iterrows():
+            key = f"{row[name_col]} {row.get('Version', '')}".strip()
+            if key in recs:
+                df.at[idx, "Recommendation"] = recs[key]
+
+        if progress_callback:
+            if rb_count == total:
+                progress_callback(1.0,
+                    f"❌ {label} recs: OpenAI failed all batches — {rb_count} rows used rule-based.")
+            elif rb_count > 0:
+                progress_callback(1.0,
+                    f"⚠️ {label} recs: OpenAI {ai_count} rows ✅ | Rule-based {rb_count} rows ⚠️")
+            else:
+                progress_callback(1.0,
+                    f"✅ {label} recs complete — OpenAI analysed all {ai_count} rows")
+        return df
+
     # ── Internal batch call ───────────────────────────────────────────────────
     def _recommend_batch(self, batch: list, kind: str) -> tuple:
         """Returns (recs_dict, used_ai: bool)."""
@@ -181,7 +285,7 @@ class RecommendationAgent:
             prompt = BATCH_PROMPT_OS.format(rows=rows_text)
             system = OS_SYSTEM
             key_fn = lambda r: r.get("OS Version", "")
-        else:
+        elif kind == "DB":
             rows_text = "\n".join(
                 f"- {r.get('Database','?')} {r.get('Version','?')} | Type: {r.get('Type','')} "
                 f"| Status: {r.get('Status','')} "
@@ -195,6 +299,51 @@ class RecommendationAgent:
             prompt = BATCH_PROMPT_DB.format(rows=rows_text)
             system = DB_SYSTEM
             key_fn = lambda r: f"{r.get('Database','?')} {r.get('Version','?')}"
+        elif kind == "WS":
+            name_col = "Web Server"
+            rows_text = "\n".join(
+                f"- {r.get(name_col,'?')} {r.get('Version','?')} | Type: {r.get('Type','')} "
+                f"| Status: {r.get('Status','')} "
+                f"| Mainstream End: {r.get('Mainstream / Premier End','')} "
+                f"| Extended End: {r.get('Extended Support End','')} "
+                f"| Upgrade: {r.get('Upgrade','')} | Replace: {r.get('Replace','')} "
+                f"| Primary Alt: {r.get('Primary Alternative','')} "
+                f"| Notes: {r.get('Notes','')}"
+                for r in batch
+            )
+            prompt = BATCH_PROMPT_GENERIC.format(kind_label="web server", rows=rows_text)
+            system = WS_SYSTEM
+            key_fn = lambda r: f"{r.get(name_col,'?')} {r.get('Version','?')}"
+        elif kind == "AS":
+            name_col = "App Server"
+            rows_text = "\n".join(
+                f"- {r.get(name_col,'?')} {r.get('Version','?')} | Type: {r.get('Type','')} "
+                f"| Status: {r.get('Status','')} "
+                f"| Mainstream End: {r.get('Mainstream / Premier End','')} "
+                f"| Extended End: {r.get('Extended Support End','')} "
+                f"| Upgrade: {r.get('Upgrade','')} | Replace: {r.get('Replace','')} "
+                f"| Primary Alt: {r.get('Primary Alternative','')} "
+                f"| Notes: {r.get('Notes','')}"
+                for r in batch
+            )
+            prompt = BATCH_PROMPT_GENERIC.format(kind_label="application server / middleware", rows=rows_text)
+            system = AS_SYSTEM
+            key_fn = lambda r: f"{r.get(name_col,'?')} {r.get('Version','?')}"
+        else:  # FW
+            name_col = "Framework"
+            rows_text = "\n".join(
+                f"- {r.get(name_col,'?')} {r.get('Version','?')} | Type: {r.get('Type','')} "
+                f"| Status: {r.get('Status','')} "
+                f"| Mainstream End: {r.get('Mainstream / Premier End','')} "
+                f"| Extended End: {r.get('Extended Support End','')} "
+                f"| Upgrade: {r.get('Upgrade','')} | Replace: {r.get('Replace','')} "
+                f"| Primary Alt: {r.get('Primary Alternative','')} "
+                f"| Notes: {r.get('Notes','')}"
+                for r in batch
+            )
+            prompt = BATCH_PROMPT_GENERIC.format(kind_label="framework / runtime", rows=rows_text)
+            system = FW_SYSTEM
+            key_fn = lambda r: f"{r.get(name_col,'?')} {r.get('Version','?')}"
 
         # Attempt: OpenAI Chat Completions API
         try:
@@ -256,19 +405,23 @@ class RecommendationAgent:
                     return f"SUPPORTED: No immediate action. Monitor lifecycle through {end_str}."
             return "Review support lifecycle and plan upgrade path accordingly."
         else:
+            # Handles DB, WS, AS, FW — all share same column structure
             status  = row.get("Status", "").lower()
             alt     = row.get("Primary Alternative", "")
-            ext_end = row.get("Extended Support End", "")
+            ext_end = row.get("Extended Support End", "") or row.get("Mainstream / Premier End", "")
             replace = row.get("Replace", "N")
-            db_name = f"{row.get('Database','DB')} {row.get('Version','')}"
+            # Determine name based on kind
+            name_col_map = {"DB": "Database", "WS": "Web Server", "AS": "App Server", "FW": "Framework"}
+            name_col = name_col_map.get(kind, "Database")
+            item_name = f"{row.get(name_col, kind)} {row.get('Version', '')}".strip()
 
             if status == "end of life":
-                return f"CRITICAL: {db_name} is End of Life. Migrate{' to ' + alt if alt else ''} immediately — no patches or security fixes available."
+                return f"CRITICAL: {item_name} is End of Life. Migrate{' to ' + alt if alt else ''} immediately — no patches or security fixes available."
             elif status == "expiring soon":
-                return f"URGENT: Support ending soon (extended end: {ext_end}). Begin migration{' to ' + alt if alt else ''} immediately."
+                return f"URGENT: Support ending soon (end: {ext_end}). Begin migration{' to ' + alt if alt else ''} immediately."
             elif status == "future":
-                return f"MONITOR: {db_name} is not yet released. Track GA timeline for new project adoption."
+                return f"MONITOR: {item_name} is not yet released. Track GA timeline for new project adoption."
             elif replace == "Y" and alt:
-                return f"MIGRATION CANDIDATE: Evaluate migration to {alt} — improved licensing economics and long-term support."
+                return f"MIGRATION CANDIDATE: Evaluate migration to {alt} for long-term support."
             else:
-                return f"SUPPORTED: No immediate action required. Extended support through {ext_end or 'N/A'}."
+                return f"SUPPORTED: No immediate action required. Support through {ext_end or 'N/A'}."

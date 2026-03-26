@@ -194,6 +194,7 @@ class PolicyAnalysisAgent:
         defaults = {
             "a5_status": "idle", "a5_context": {}, "a5_principles": [],
             "a5_costs": {}, "a5_os_done": False, "a5_db_done": False,
+            "a5_ws_done": False, "a5_as_done": False, "a5_fw_done": False,
             "a5_preflight_done": False, "a5_log": [],
         }
         for k, v in defaults.items():
@@ -206,7 +207,9 @@ class PolicyAnalysisAgent:
         if session_id:
             _delete_session(session_id)
         for k in ["a5_status","a5_session_id","a5_context","a5_principles",
-                  "a5_costs","a5_os_done","a5_db_done","a5_preflight_done","a5_log"]:
+                  "a5_costs","a5_os_done","a5_db_done",
+                  "a5_ws_done","a5_as_done","a5_fw_done",
+                  "a5_preflight_done","a5_log"]:
             st.session_state.pop(k, None)
         PolicyAnalysisAgent.init_session()
 
@@ -350,6 +353,15 @@ class PolicyAnalysisAgent:
     def analyse_db(self, df, principles, costs, context, progress_cb=None):
         return self._analyse(df, "DB", principles, costs, context, progress_cb)
 
+    def analyse_ws(self, df, principles, costs, context, progress_cb=None):
+        return self._analyse(df, "WS", principles, costs, context, progress_cb)
+
+    def analyse_as(self, df, principles, costs, context, progress_cb=None):
+        return self._analyse(df, "AS", principles, costs, context, progress_cb)
+
+    def analyse_fw(self, df, principles, costs, context, progress_cb=None):
+        return self._analyse(df, "FW", principles, costs, context, progress_cb)
+
     def _analyse(self, df, kind, principles, costs, context, progress_cb):
         df = df.copy()
         for col in ["Final Recommendation", "Final Verdict", "Analysis Source"]:
@@ -369,18 +381,24 @@ class PolicyAnalysisAgent:
                 progress_cb(i / total,
                     f"🧠 Generating Final Recommendations — {kind} rows {i+1}–{min(i+batch,total)} of {total}...")
 
-            rows_text = "\n".join(
-                f"KEY={r['OS Version']} | Mainstream={r.get('Mainstream/Full Support End','')} | "
-                f"Extended={r.get('Extended/LTSC Support End','')} | "
-                f"Agent2={r.get('Recommendation','')[:120]}"
-                for r in chunk
-            ) if kind == "OS" else "\n".join(
-                f"KEY={r['Database']} {r['Version']} | Status={r.get('Status','')} | "
-                f"Extended={r.get('Extended Support End','')} | "
-                f"Replace={r.get('Replace','')} | Alt={r.get('Primary Alternative','')} | "
-                f"Agent2={r.get('Recommendation','')[:120]}"
-                for r in chunk
-            )
+            if kind == "OS":
+                rows_text = "\n".join(
+                    f"KEY={r['OS Version']} | Mainstream={r.get('Mainstream/Full Support End','')} | "
+                    f"Extended={r.get('Extended/LTSC Support End','')} | "
+                    f"Agent2={r.get('Recommendation','')[:120]}"
+                    for r in chunk
+                )
+            else:
+                # DB, WS, AS, FW all share same column structure
+                name_col_map = {"DB": "Database", "WS": "Web Server", "AS": "App Server", "FW": "Framework"}
+                name_col = name_col_map.get(kind, "Database")
+                rows_text = "\n".join(
+                    f"KEY={r.get(name_col,'?')} {r.get('Version','?')} | Status={r.get('Status','')} | "
+                    f"Extended={r.get('Extended Support End','')} | "
+                    f"Replace={r.get('Replace','')} | Alt={r.get('Primary Alternative','')} | "
+                    f"Agent2={r.get('Recommendation','')[:120]}"
+                    for r in chunk
+                )
 
             prompt = (f"ORG POLICY:\n{ctx_text}\n\nGUIDING PRINCIPLES:\n{gp_text}\n\n"
                       f"VENDOR COSTS:\n{cost_text}\n\n"
@@ -411,8 +429,11 @@ class PolicyAnalysisAgent:
                     last_error = str(ex)
 
             for j, row in enumerate(chunk):
-                key = row["OS Version"] if kind == "OS" \
-                      else f"{row['Database']} {row['Version']}"
+                if kind == "OS":
+                    key = row["OS Version"]
+                else:
+                    nc = {"DB": "Database", "WS": "Web Server", "AS": "App Server", "FW": "Framework"}.get(kind, "Database")
+                    key = f"{row.get(nc, '?')} {row.get('Version', '')}".strip()
                 if key in recs:
                     rec = recs[key]; source = "OpenAI"; ai_count += 1
                 else:
@@ -437,9 +458,11 @@ class PolicyAnalysisAgent:
                 or _parse(row.get("Mainstream/Full Support End",""))
             name = row.get("OS Version", "?")
         else:
+            # DB, WS, AS, FW all share same column structure
             end  = _parse(row.get("Extended Support End","")) \
                 or _parse(row.get("Mainstream / Premier End",""))
-            name = f"{row.get('Database','?')} {row.get('Version','?')}"
+            nc = {"DB": "Database", "WS": "Web Server", "AS": "App Server", "FW": "Framework"}.get(kind, "Database")
+            name = f"{row.get(nc,'?')} {row.get('Version','?')}"
         if not end:
             return f"MONITOR — Verify support dates for {name}. (GP-02)"
         if end < TODAY:
