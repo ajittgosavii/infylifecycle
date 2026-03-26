@@ -462,8 +462,23 @@ COST_ESTIMATES = {
     "Rails": ("$2K–5K/app", "$5K–20K/app (containerize)", "$0 (OSS)", "application"),
 }
 
-def get_cost_estimates(table_data):
-    """Add cost estimate columns to each principle row."""
+COST_AI_SYSTEM = f"""You are a cloud migration cost analyst with expertise in enterprise IT pricing.
+Today is {TODAY}. Provide CURRENT approximate cost estimates for technology migrations.
+
+For each technology, estimate:
+- cost_upgrade: Cost to upgrade to latest supported version (per unit)
+- cost_replace: Cost to replace/re-platform to cloud-native alternative (per unit)
+- cost_do_nothing: Annual cost of maintaining current EOL/unsupported state (ESU, extended support, risk)
+- cost_unit: The unit of measurement (server, instance, application, cluster, device)
+- source_note: Brief note on what drives the cost (e.g. "ESU Year 2 pricing", "Oracle annual support 22%")
+
+Reference actual vendor pricing where possible (Microsoft ESU, Red Hat subscriptions, Oracle support %).
+Return ONLY a JSON array matching the input technologies."""
+
+
+def get_cost_estimates(table_data, agent=None):
+    """Add cost estimate columns to each principle row. Optionally enhanced with AI."""
+    # Start with defaults
     result = []
     for item in table_data:
         tech = item.get("technology", item.get("os_family", ""))
@@ -482,7 +497,53 @@ def get_cost_estimates(table_data):
             item["cost_replace"] = "Custom estimate required"
             item["cost_do_nothing"] = "Varies"
             item["cost_unit"] = "unit"
+        item["cost_source"] = "baseline"
         result.append(item)
+
+    # AI enhancement if agent provided
+    if agent:
+        try:
+            tech_list = [{"technology": r.get("technology", r.get("os_family", "")),
+                          "category": r.get("category", "OS"),
+                          "cloud_target": r.get("cloud_target", "")}
+                         for r in result]
+            prompt = (
+                f"Provide current cost estimates for migrating these technologies:\n"
+                + json.dumps(tech_list, indent=2) +
+                f"\n\nReturn JSON array with fields: technology, cost_upgrade, cost_replace, "
+                f"cost_do_nothing, cost_unit, source_note"
+            )
+            resp = agent.client.chat.completions.create(
+                model=agent.model, max_tokens=3000,
+                messages=[
+                    {"role": "system", "content": COST_AI_SYSTEM},
+                    {"role": "user", "content": prompt}
+                ])
+            text = resp.choices[0].message.content.strip()
+            if "```" in text:
+                text = text.split("```json")[-1].split("```")[0] if "```json" in text \
+                       else text.split("```")[1].split("```")[0]
+            s, e = text.find("["), text.rfind("]")
+            if s != -1 and e > s:
+                ai_costs = json.loads(text[s:e+1])
+                # Merge AI costs into results by technology name
+                ai_lookup = {}
+                for ac in ai_costs:
+                    ai_lookup[ac.get("technology", "").lower()] = ac
+                for item in result:
+                    tech = item.get("technology", item.get("os_family", "")).lower()
+                    if tech in ai_lookup:
+                        ac = ai_lookup[tech]
+                        item["cost_upgrade"] = ac.get("cost_upgrade", item["cost_upgrade"])
+                        item["cost_replace"] = ac.get("cost_replace", item["cost_replace"])
+                        item["cost_do_nothing"] = ac.get("cost_do_nothing", item["cost_do_nothing"])
+                        item["cost_unit"] = ac.get("cost_unit", item["cost_unit"])
+                        item["cost_source"] = "AI-enhanced"
+                        if ac.get("source_note"):
+                            item["cost_note"] = ac["source_note"]
+        except Exception:
+            pass  # Keep defaults if AI fails
+
     return result
 
 

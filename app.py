@@ -1639,39 +1639,130 @@ if _show_strategist:
                 # COST ESTIMATOR
                 # ══════════════════════════════════════════════════════════════
                 from agents.agent_analysis import get_cost_estimates
-                costed_data = get_cost_estimates([dict(r) for r in table_data])
 
                 st.divider()
                 st.markdown("""<div style='background:#FFF7ED;border:1px solid #FED7AA;border-radius:8px;
-                    padding:0.8rem 1rem;margin-bottom:0.8rem;'>
+                    padding:0.8rem 1rem;margin-bottom:0.5rem;'>
                     <h4 style='margin:0;color:#92400E;'>💰 Cost Estimator — Upgrade vs Replace vs Do Nothing</h4>
-                    <small style='color:#78716C;'>Approximate TCO per unit. Actual costs vary by environment complexity.</small>
                 </div>""", unsafe_allow_html=True)
 
-                st.markdown(
-                    "<table style='width:100%;border-collapse:collapse;font-size:0.8rem;'>"
-                    "<thead><tr style='background:#92400E;color:white;'>"
-                    "<th style='padding:8px;border:1px solid #FED7AA;'>Technology</th>"
-                    "<th style='padding:8px;border:1px solid #FED7AA;'>Category</th>"
-                    "<th style='padding:8px;border:1px solid #FED7AA;'>💚 Upgrade Cost</th>"
-                    "<th style='padding:8px;border:1px solid #FED7AA;'>🔵 Replace Cost</th>"
-                    "<th style='padding:8px;border:1px solid #FED7AA;'>🔴 Do Nothing (Annual)</th>"
-                    "<th style='padding:8px;border:1px solid #FED7AA;'>Unit</th>"
-                    "</tr></thead><tbody>", unsafe_allow_html=True)
+                # ── Disclaimer ───────────────────────────────────────────────
+                st.markdown("""<div style='background:#FFFBEB;border:1px solid #FDE68A;border-radius:6px;
+                    padding:0.5rem 0.8rem;margin-bottom:0.8rem;font-size:0.78rem;color:#92400E;'>
+                    ⚠️ <strong>Disclaimer:</strong> All cost figures are <strong>approximate industry estimates</strong>
+                    based on publicly available vendor pricing and AI research. Actual costs vary significantly by:
+                    enterprise agreement discounts, volume licensing, geographic region, application complexity,
+                    and migration team rates. <strong>These estimates are for directional planning only — always
+                    validate with vendor quotes and your procurement team before budgeting.</strong>
+                    Costs marked <span style='background:#DCFCE7;padding:1px 4px;border-radius:3px;'>AI-enhanced</span>
+                    were researched by Agent 5 using current training knowledge.
+                </div>""", unsafe_allow_html=True)
 
-                for i, row in enumerate(costed_data):
-                    bg = "#FFFBEB" if i % 2 == 0 else "#FFF7ED"
-                    tech = row.get("technology", row.get("os_family", ""))
+                # ── Generate / cache cost data ───────────────────────────────
+                if "a5_costed_data" not in st.session_state:
+                    with st.spinner("🧠 Agent 5 researching current vendor pricing..."):
+                        try:
+                            agent5_cost = PolicyAnalysisAgent(api_key=api_key)
+                            costed_data = get_cost_estimates([dict(r) for r in table_data], agent=agent5_cost)
+                        except Exception:
+                            costed_data = get_cost_estimates([dict(r) for r in table_data], agent=None)
+                    st.session_state.a5_costed_data = costed_data
+                    st.rerun()
+
+                costed_data = st.session_state.a5_costed_data
+
+                # ── Mode toggle: View vs Edit ────────────────────────────────
+                cost_mode_col1, cost_mode_col2, cost_mode_col3 = st.columns([2, 2, 6])
+                with cost_mode_col1:
+                    edit_mode = st.toggle("✏️ Edit Mode", value=False, key="cost_edit_mode")
+                with cost_mode_col2:
+                    if st.button("🔄 Re-research with AI", key="cost_ai_refresh"):
+                        st.session_state.pop("a5_costed_data", None)
+                        st.rerun()
+
+                ai_count = sum(1 for r in costed_data if r.get("cost_source") == "AI-enhanced")
+                baseline_count = len(costed_data) - ai_count
+                with cost_mode_col3:
+                    st.caption(f"📊 {ai_count} AI-enhanced · {baseline_count} baseline estimates · {len(costed_data)} total")
+
+                if edit_mode:
+                    # ── Editable mode using st.data_editor ───────────────────
+                    import pandas as pd
+                    cost_df = pd.DataFrame([{
+                        "Technology": r.get("technology", r.get("os_family", "")),
+                        "Category": r.get("category", ""),
+                        "Upgrade Cost": r.get("cost_upgrade", ""),
+                        "Replace Cost": r.get("cost_replace", ""),
+                        "Do Nothing (Annual)": r.get("cost_do_nothing", ""),
+                        "Unit": r.get("cost_unit", ""),
+                        "Source": r.get("cost_source", "baseline"),
+                    } for r in costed_data])
+
+                    edited_df = st.data_editor(
+                        cost_df,
+                        use_container_width=True,
+                        hide_index=True,
+                        disabled=["Technology", "Category", "Source"],
+                        column_config={
+                            "Technology": st.column_config.TextColumn(width=150),
+                            "Category": st.column_config.TextColumn(width=100),
+                            "Upgrade Cost": st.column_config.TextColumn("💚 Upgrade Cost", width=180),
+                            "Replace Cost": st.column_config.TextColumn("🔵 Replace Cost", width=180),
+                            "Do Nothing (Annual)": st.column_config.TextColumn("🔴 Do Nothing", width=180),
+                            "Unit": st.column_config.TextColumn(width=90),
+                            "Source": st.column_config.TextColumn(width=100),
+                        },
+                        key="cost_editor"
+                    )
+
+                    if st.button("💾 Save Edited Costs", type="primary"):
+                        # Merge edits back into costed_data
+                        for i, row in edited_df.iterrows():
+                            if i < len(costed_data):
+                                costed_data[i]["cost_upgrade"] = row["Upgrade Cost"]
+                                costed_data[i]["cost_replace"] = row["Replace Cost"]
+                                costed_data[i]["cost_do_nothing"] = row["Do Nothing (Annual)"]
+                                costed_data[i]["cost_unit"] = row["Unit"]
+                                costed_data[i]["cost_source"] = "user-edited"
+                        st.session_state.a5_costed_data = costed_data
+                        st.success("✅ Costs saved!")
+                        st.rerun()
+                else:
+                    # ── Read-only styled table ───────────────────────────────
                     st.markdown(
-                        f"<tr style='background:{bg};'>"
-                        f"<td style='padding:6px 8px;border:1px solid #FDE68A;font-weight:600;'>{tech}</td>"
-                        f"<td style='padding:6px 8px;border:1px solid #FDE68A;'>{row.get('category','')}</td>"
-                        f"<td style='padding:6px 8px;border:1px solid #FDE68A;color:#166534;'>{row.get('cost_upgrade','')}</td>"
-                        f"<td style='padding:6px 8px;border:1px solid #FDE68A;color:#1D4ED8;'>{row.get('cost_replace','')}</td>"
-                        f"<td style='padding:6px 8px;border:1px solid #FDE68A;color:#DC2626;'>{row.get('cost_do_nothing','')}</td>"
-                        f"<td style='padding:6px 8px;border:1px solid #FDE68A;'>{row.get('cost_unit','')}</td>"
-                        f"</tr>", unsafe_allow_html=True)
-                st.markdown("</tbody></table>", unsafe_allow_html=True)
+                        "<table style='width:100%;border-collapse:collapse;font-size:0.8rem;'>"
+                        "<thead><tr style='background:#92400E;color:white;'>"
+                        "<th style='padding:8px;border:1px solid #FED7AA;'>Technology</th>"
+                        "<th style='padding:8px;border:1px solid #FED7AA;'>Category</th>"
+                        "<th style='padding:8px;border:1px solid #FED7AA;'>💚 Upgrade Cost</th>"
+                        "<th style='padding:8px;border:1px solid #FED7AA;'>🔵 Replace Cost</th>"
+                        "<th style='padding:8px;border:1px solid #FED7AA;'>🔴 Do Nothing (Annual)</th>"
+                        "<th style='padding:8px;border:1px solid #FED7AA;'>Unit</th>"
+                        "<th style='padding:8px;border:1px solid #FED7AA;'>Source</th>"
+                        "</tr></thead><tbody>", unsafe_allow_html=True)
+
+                    for i, row in enumerate(costed_data):
+                        bg = "#FFFBEB" if i % 2 == 0 else "#FFF7ED"
+                        tech = row.get("technology", row.get("os_family", ""))
+                        src = row.get("cost_source", "baseline")
+                        src_badge = {"AI-enhanced": "background:#DCFCE7;color:#166534",
+                                     "user-edited": "background:#DBEAFE;color:#1E40AF",
+                                     "baseline": "background:#F1F5F9;color:#64748B"}.get(src, "")
+                        note = row.get("cost_note", "")
+                        note_html = f"<br><small style='color:#9CA3AF;'>{note}</small>" if note else ""
+
+                        st.markdown(
+                            f"<tr style='background:{bg};'>"
+                            f"<td style='padding:6px 8px;border:1px solid #FDE68A;font-weight:600;'>{tech}{note_html}</td>"
+                            f"<td style='padding:6px 8px;border:1px solid #FDE68A;'>{row.get('category','')}</td>"
+                            f"<td style='padding:6px 8px;border:1px solid #FDE68A;color:#166534;'>{row.get('cost_upgrade','')}</td>"
+                            f"<td style='padding:6px 8px;border:1px solid #FDE68A;color:#1D4ED8;'>{row.get('cost_replace','')}</td>"
+                            f"<td style='padding:6px 8px;border:1px solid #FDE68A;color:#DC2626;'>{row.get('cost_do_nothing','')}</td>"
+                            f"<td style='padding:6px 8px;border:1px solid #FDE68A;'>{row.get('cost_unit','')}</td>"
+                            f"<td style='padding:6px 8px;border:1px solid #FDE68A;'>"
+                            f"<span style='{src_badge};padding:2px 6px;border-radius:10px;font-size:0.7rem;'>{src}</span></td>"
+                            f"</tr>", unsafe_allow_html=True)
+                    st.markdown("</tbody></table>", unsafe_allow_html=True)
 
                 # ══════════════════════════════════════════════════════════════
                 # MIGRATION WAVE PLANNER
