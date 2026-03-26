@@ -138,6 +138,7 @@ st.markdown("""
 .b-idle    { background:#F1F5F9; color:#64748B; }
 .b-running { background:#FEF3C7; color:#92400E; }
 .b-done    { background:#D1FAE5; color:#065F46; }
+table td, table th { word-wrap: break-word; overflow-wrap: break-word; }
 .stTabs [data-baseweb="tab-list"] {
     justify-content: center;
 }
@@ -1584,11 +1585,11 @@ if _show_strategist:
 
                     # Table for this category
                     st.markdown(
-                        "<table style='width:100%;border-collapse:collapse;font-size:0.82rem;margin-bottom:8px;'>"
+                        "<table style='width:100%;border-collapse:collapse;font-size:0.82rem;margin-bottom:8px;table-layout:fixed;'>"
                         "<thead><tr style='background:#F1F5F9;'>"
-                        "<th style='padding:8px 10px;text-align:left;border:1px solid #E2E8F0;width:15%;'>Technology</th>"
+                        "<th style='padding:8px 10px;text-align:left;border:1px solid #E2E8F0;width:14%;'>Technology</th>"
                         "<th style='padding:8px 10px;text-align:left;border:1px solid #E2E8F0;width:12%;'>Cloud Target</th>"
-                        "<th style='padding:8px 10px;text-align:left;border:1px solid #E2E8F0;width:36%;'>Upgrade Principle</th>"
+                        "<th style='padding:8px 10px;text-align:left;border:1px solid #E2E8F0;width:37%;'>Upgrade Principle</th>"
                         "<th style='padding:8px 10px;text-align:left;border:1px solid #E2E8F0;width:37%;'>Replacement Principle</th>"
                         "</tr></thead><tbody>",
                         unsafe_allow_html=True)
@@ -1730,15 +1731,15 @@ if _show_strategist:
                 else:
                     # ── Read-only styled table ───────────────────────────────
                     st.markdown(
-                        "<table style='width:100%;border-collapse:collapse;font-size:0.8rem;'>"
+                        "<table style='width:100%;border-collapse:collapse;font-size:0.8rem;table-layout:fixed;'>"
                         "<thead><tr style='background:#92400E;color:white;'>"
-                        "<th style='padding:8px;border:1px solid #FED7AA;'>Technology</th>"
-                        "<th style='padding:8px;border:1px solid #FED7AA;'>Category</th>"
-                        "<th style='padding:8px;border:1px solid #FED7AA;'>💚 Upgrade Cost</th>"
-                        "<th style='padding:8px;border:1px solid #FED7AA;'>🔵 Replace Cost</th>"
-                        "<th style='padding:8px;border:1px solid #FED7AA;'>🔴 Do Nothing (Annual)</th>"
-                        "<th style='padding:8px;border:1px solid #FED7AA;'>Unit</th>"
-                        "<th style='padding:8px;border:1px solid #FED7AA;'>Source</th>"
+                        "<th style='padding:8px;border:1px solid #FED7AA;width:14%;'>Technology</th>"
+                        "<th style='padding:8px;border:1px solid #FED7AA;width:8%;'>Category</th>"
+                        "<th style='padding:8px;border:1px solid #FED7AA;width:22%;'>💚 Upgrade Cost</th>"
+                        "<th style='padding:8px;border:1px solid #FED7AA;width:22%;'>🔵 Replace Cost</th>"
+                        "<th style='padding:8px;border:1px solid #FED7AA;width:22%;'>🔴 Do Nothing (Annual)</th>"
+                        "<th style='padding:8px;border:1px solid #FED7AA;width:6%;'>Unit</th>"
+                        "<th style='padding:8px;border:1px solid #FED7AA;width:6%;'>Source</th>"
                         "</tr></thead><tbody>", unsafe_allow_html=True)
 
                     for i, row in enumerate(costed_data):
@@ -2081,9 +2082,13 @@ if _show_strategist:
 
                 # ── Render chat history ───────────────────────────────────────
                 for msg in messages:
+                    content = msg["content"]
+                    # Hide raw JSON responses from display
+                    if msg["role"] == "assistant" and content.strip().startswith("{") and '"ready"' in content:
+                        continue  # Skip JSON-only messages
                     with st.chat_message(msg["role"],
                                          avatar="🧠" if msg["role"] == "assistant" else "👤"):
-                        st.markdown(msg["content"])
+                        st.markdown(content)
 
             # ── User chat input (always shown when chatting) ──────────────────
             if messages or not st.session_state.get("a5_opening_pending"):
@@ -2124,8 +2129,14 @@ if _show_strategist:
                             st.session_state.a5_context = context
                             st.session_state.a5_status  = "principles"
                         else:
-                            st.markdown(reply)
-                            _save_message(session_id, "assistant", reply)
+                            # If reply is raw JSON, show a friendly message instead
+                            display_reply = reply
+                            if reply.strip().startswith("{") and '"ready"' in reply:
+                                display_reply = ("I'm gathering your policy context. "
+                                    "Let's continue — could you share more about your "
+                                    "migration priorities and constraints?")
+                            st.markdown(display_reply)
+                            _save_message(session_id, "assistant", display_reply)
                             _save_session_context(session_id, {}, "", "chatting")
                     st.rerun()
 

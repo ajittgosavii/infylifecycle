@@ -465,14 +465,19 @@ COST_ESTIMATES = {
 COST_AI_SYSTEM = f"""You are a cloud migration cost analyst with expertise in enterprise IT pricing.
 Today is {TODAY}. Provide CURRENT approximate cost estimates for technology migrations.
 
-For each technology, estimate:
-- cost_upgrade: Cost to upgrade to latest supported version (per unit)
-- cost_replace: Cost to replace/re-platform to cloud-native alternative (per unit)
-- cost_do_nothing: Annual cost of maintaining current EOL/unsupported state (ESU, extended support, risk)
-- cost_unit: The unit of measurement (server, instance, application, cluster, device)
-- source_note: Brief note on what drives the cost (e.g. "ESU Year 2 pricing", "Oracle annual support 22%")
+CRITICAL FORMAT RULES:
+- All cost values MUST be human-readable strings with dollar signs and ranges
+- Example: "$2K–5K/server" or "$500–1.3K/yr" — NEVER raw numbers like 500 or 1000
+- Always include the unit in the cost string (e.g. "/server", "/instance", "/yr")
 
-Reference actual vendor pricing where possible (Microsoft ESU, Red Hat subscriptions, Oracle support %).
+For each technology, return:
+- cost_upgrade: string like "$2K–5K/server (in-place upgrade)"
+- cost_replace: string like "$15K–30K/server (re-platform to cloud)"
+- cost_do_nothing: string like "$200–400/server/yr ESU"
+- cost_unit: "server" | "instance" | "application" | "cluster" | "device"
+- source_note: Brief note like "Microsoft ESU Year 2 pricing"
+
+Reference actual vendor pricing where possible.
 Return ONLY a JSON array matching the input technologies."""
 
 
