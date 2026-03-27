@@ -1458,7 +1458,8 @@ if _show_strategist:
                     ❓ You selected "Other" — Tell us about your additional database
                   </h4>
                   <p style="margin:0;color:#78716C;font-size:0.82rem;">
-                    Agent 5 will check if we already track it or if it needs to be added.
+                    Agent 5 will check if we already track it. If it's new, it will be
+                    added to the baseline automatically.
                   </p>
                 </div>""", unsafe_allow_html=True)
 
@@ -1470,18 +1471,72 @@ if _show_strategist:
 
                 if st.button("🔍 Verify Database", type="primary", disabled=not (key_ok and other_db_input)):
                     with st.spinner("🧠 Agent 5 checking..."):
-                        agent5 = PolicyAnalysisAgent(api_key=api_key)
                         # Check against DB dataframe
                         known = st.session_state.db_df["Database"].str.lower().tolist()
-                        if any(other_db_input.lower() in k for k in known):
-                            st.success(f"✅ **\"{other_db_input}\" is already tracked** in the baseline.")
-                        else:
-                            st.warning(f"🆕 **{other_db_input}** is not in the baseline. "
-                                       f"It will be noted for the policy conversation.")
-                            st.session_state.a5_context["additional_db"] = other_db_input
+                        match_found = any(other_db_input.lower() in k for k in known)
+
+                    if match_found:
+                        st.success(f"✅ **\"{other_db_input}\" is already tracked** in the baseline. No changes needed.")
+                        if st.button("➡️ Proceed to Cloud Profile", key="db_match_proceed"):
+                            st.session_state.a5_context["db_landscape"] = ", ".join(
+                                [f for f in st.session_state.a5_db_landscape_selected if f != "Other"])
+                            st.session_state.a5_status = "cloud_profile"
+                            st.rerun()
+                    else:
+                        st.warning(
+                            f"🆕 **{other_db_input}** is not in the baseline.\n\n"
+                            f"**Agent 1 (Sentinel) will be triggered** to add it and fetch lifecycle data."
+                        )
+                        if st.button("🚀 Add Database & Re-scan with Agent 1", type="primary", key="trigger_a1_db"):
+                            import pandas as pd
+                            new_row = {
+                                "Database": other_db_input,
+                                "Version": "Latest",
+                                "Type": "Database",
+                                "Mainstream / Premier End": "",
+                                "Extended Support End": "",
+                                "Status": "Supported",
+                                "Notes": f"Added by Agent 5 DB survey — {datetime.now().strftime('%d %b %Y')}",
+                                "Recommendation": "",
+                                "Upgrade": "N", "Replace": "N",
+                                "Primary Alternative": "", "Secondary Alternative": ""
+                            }
+                            st.session_state.db_df = pd.concat(
+                                [st.session_state.db_df, pd.DataFrame([new_row])],
+                                ignore_index=True)
+                            st.session_state.db_df = add_risk_scores(st.session_state.db_df, "DB")
+
+                            # Trigger Agent 1
+                            st.session_state.a1_status = "running"
+                            with st.spinner(f"🔍 Agent 1 scanning lifecycle data for {other_db_input}..."):
+                                try:
+                                    agent1 = OSDataAgent(api_key=api_key)
+                                    updates = agent1.fetch_updates(progress_callback=lambda p, m: None)
+                                    new_os, new_db, new_ws, new_as, new_fw, changes = agent1.merge_updates_into_df(
+                                        st.session_state.os_df, st.session_state.db_df, updates,
+                                        ws_df=st.session_state.ws_df,
+                                        as_df=st.session_state.as_df,
+                                        fw_df=st.session_state.fw_df)
+                                    st.session_state.os_df = add_risk_scores(new_os, "OS")
+                                    st.session_state.db_df = add_risk_scores(new_db, "DB")
+                                    st.session_state.ws_df = add_risk_scores(new_ws, "DB")
+                                    st.session_state.as_df = add_risk_scores(new_as, "DB")
+                                    st.session_state.fw_df = add_risk_scores(new_fw, "DB")
+                                    st.session_state.changes_log = changes
+                                    st.session_state.a1_status = "done"
+                                    save_os_df(st.session_state.os_df)
+                                    save_db_df(st.session_state.db_df)
+                                except Exception as e:
+                                    st.session_state.a1_status = "error"
+                                    st.error(f"Agent 1 error: {e}")
+
+                            st.success(f"✅ **{other_db_input}** added. Returning to DB survey to re-categorize...")
+                            st.session_state.a5_status = "db_landscape"
+                            import time; time.sleep(2)
+                            st.rerun()
 
                 st.divider()
-                if st.button("➡️ Proceed to Cloud Profile", use_container_width=True):
+                if st.button("⏭️ Skip — Proceed without adding", use_container_width=True, key="db_skip"):
                     st.session_state.a5_context["db_landscape"] = ", ".join(
                         [f for f in st.session_state.a5_db_landscape_selected if f != "Other"])
                     st.session_state.a5_status = "cloud_profile"
