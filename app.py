@@ -1302,29 +1302,34 @@ if _show_strategist:
                 with st.spinner("🧠 Agent 5 is checking if this OS is already tracked..."):
                     agent5 = PolicyAnalysisAgent(api_key=api_key)
                     result = agent5.verify_unknown_os(other_input, st.session_state.os_df)
+                    st.session_state["_os_verify_result"] = result
+                    st.session_state["_os_verify_input"] = other_input
+                    st.rerun()
 
-                if result.get("match_found"):
+            # Show result from verification (persisted in session state)
+            _os_result = st.session_state.get("_os_verify_result")
+            _os_input = st.session_state.get("_os_verify_input", "")
+            if _os_result:
+                if _os_result.get("match_found"):
                     st.success(
-                        f"✅ **Match found!** \"{other_input}\" is already tracked as "
-                        f"**{result.get('matched_to', '?')}** in our baseline.\n\n"
-                        f"_{result.get('explanation', '')}_"
+                        f"✅ **Match found!** \"{_os_input}\" is already tracked as "
+                        f"**{_os_result.get('matched_to', '?')}** in our baseline.\n\n"
+                        f"_{_os_result.get('explanation', '')}_"
                     )
-                    st.info("No changes needed. Click below to proceed.")
-                    if st.button("➡️ Proceed to DB Landscape", key="proceed_after_match"):
+                    if st.button("➡️ Proceed to DB Landscape", key="proceed_after_match", type="primary"):
+                        st.session_state.pop("_os_verify_result", None)
                         st.session_state.a5_context["os_landscape"] = ", ".join(
                             [f for f in st.session_state.a5_landscape_selected if f != "Other"])
                         st.session_state.a5_status = "db_landscape"
                         st.rerun()
 
-                elif result.get("is_valid_os"):
-                    os_name = result.get("os_name", other_input)
+                elif _os_result.get("is_valid_os"):
+                    os_name = _os_result.get("os_name", _os_input)
                     st.warning(
                         f"🆕 **New OS detected:** **{os_name}** is a valid OS not in our baseline.\n\n"
-                        f"_{result.get('explanation', '')}_\n\n"
-                        f"**Agent 1 (Sentinel) will be triggered** to fetch lifecycle data for this OS."
+                        f"_{_os_result.get('explanation', '')}_"
                     )
                     if st.button("🚀 Add OS & Re-scan with Agent 1", type="primary", key="trigger_a1"):
-                        # Add placeholder to baseline
                         import pandas as pd
                         new_row = {
                             "OS Version": os_name,
@@ -1342,7 +1347,6 @@ if _show_strategist:
                             ignore_index=True)
                         st.session_state.os_df = add_risk_scores(st.session_state.os_df, "OS")
 
-                        # Trigger Agent 1 for a focused scan
                         st.session_state.a1_status = "running"
                         with st.spinner(f"🔍 Agent 1 scanning lifecycle data for {os_name}..."):
                             try:
@@ -1365,16 +1369,13 @@ if _show_strategist:
                             except Exception as e:
                                 st.session_state.a1_status = "error"
                                 st.error(f"Agent 1 error: {e}")
-
-                        st.success(f"✅ **{os_name}** added. Returning to landscape survey to re-categorize...")
-                        # Go back to landscape to re-categorize with the new OS
+                        st.session_state.pop("_os_verify_result", None)
                         st.session_state.a5_status = "landscape"
-                        import time; time.sleep(2)
                         st.rerun()
                 else:
                     st.error(
-                        f"❌ **\"{other_input}\" does not appear to be a recognized OS.**\n\n"
-                        f"_{result.get('explanation', '')}_\n\n"
+                        f"❌ **\"{_os_input}\" does not appear to be a recognized OS.**\n\n"
+                        f"_{_os_result.get('explanation', '')}_\n\n"
                         f"Please try again with a valid operating system name."
                     )
 
