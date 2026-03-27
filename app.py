@@ -1697,7 +1697,6 @@ if _show_strategist:
             table_data = st.session_state.a5_principles_table_data
 
             if table_data:
-                # Group by category for section headers
                 cat_colors = {
                     "OS": ("#1E3A8A", "🖥️"), "Database": ("#7C2D12", "🗄️"),
                     "Web Server": ("#065F46", "🌐"), "App Server": ("#4338CA", "⚙️"),
@@ -1705,49 +1704,57 @@ if _show_strategist:
                 }
                 cat_order = ["OS", "Database", "Web Server", "App Server", "Framework"]
 
+                # Single unified table with category column
+                table_html = (
+                    "<table style='width:100%;border-collapse:collapse;font-size:0.82rem;table-layout:fixed;'>"
+                    "<colgroup>"
+                    "<col style='width:10%;'/><col style='width:13%;'/><col style='width:10%;'/>"
+                    "<col style='width:33%;'/><col style='width:34%;'/>"
+                    "</colgroup>"
+                    "<thead><tr style='background:#1E293B;color:white;'>"
+                    "<th style='padding:10px;border:1px solid #334155;'>Category</th>"
+                    "<th style='padding:10px;border:1px solid #334155;'>Technology</th>"
+                    "<th style='padding:10px;border:1px solid #334155;'>Cloud Target</th>"
+                    "<th style='padding:10px;border:1px solid #334155;'>Upgrade Principle</th>"
+                    "<th style='padding:10px;border:1px solid #334155;'>Replacement Principle</th>"
+                    "</tr></thead><tbody>"
+                )
+                row_idx = 0
                 for cat in cat_order:
                     cat_rows = [r for r in table_data if r.get("category", "OS") == cat]
                     if not cat_rows:
                         continue
                     color, emoji = cat_colors.get(cat, ("#374151", "📋"))
 
-                    # Category header
-                    st.markdown(
-                        f"<div style='background:{color};color:white;padding:8px 14px;"
-                        f"border-radius:6px;margin:12px 0 4px;font-weight:700;font-size:0.9rem;'>"
-                        f"{emoji} {cat} — Guiding Principles</div>",
-                        unsafe_allow_html=True)
-
-                    # Table for this category
-                    st.markdown(
-                        "<table style='width:100%;border-collapse:collapse;font-size:0.82rem;margin-bottom:8px;table-layout:fixed;'>"
-                        "<thead><tr style='background:#F1F5F9;'>"
-                        "<th style='padding:8px 10px;text-align:left;border:1px solid #E2E8F0;width:14%;'>Technology</th>"
-                        "<th style='padding:8px 10px;text-align:left;border:1px solid #E2E8F0;width:12%;'>Cloud Target</th>"
-                        "<th style='padding:8px 10px;text-align:left;border:1px solid #E2E8F0;width:37%;'>Upgrade Principle</th>"
-                        "<th style='padding:8px 10px;text-align:left;border:1px solid #E2E8F0;width:37%;'>Replacement Principle</th>"
-                        "</tr></thead><tbody>",
-                        unsafe_allow_html=True)
-
-                    row_colors = ["#FFFFFF", "#F8FAFC"]
                     for i, row in enumerate(cat_rows):
-                        bg = row_colors[i % 2]
+                        bg = "#F8FAFC" if row_idx % 2 == 0 else "#FFFFFF"
                         upg = row.get("upgrade_principle", "")
                         repl = row.get("replacement_principle", "")
                         upg_color = "#166534" if "COTS" in upg else ("#92400E" if "None" in upg else "#1E40AF")
                         repl_color = "#7C2D12" if "Mandatory" in repl or "Migrate" in repl else "#4338CA"
                         tech = row.get("technology", row.get("os_family", ""))
 
-                        st.markdown(
-                            f"<tr style='background:{bg};'>"
-                            f"<td style='padding:6px 10px;border:1px solid #E2E8F0;font-weight:600;'>{tech}</td>"
-                            f"<td style='padding:6px 10px;border:1px solid #E2E8F0;color:#1D4ED8;'>{row.get('cloud_target','')}</td>"
-                            f"<td style='padding:6px 10px;border:1px solid #E2E8F0;color:{upg_color};'>{upg}</td>"
-                            f"<td style='padding:6px 10px;border:1px solid #E2E8F0;color:{repl_color};'>{repl}</td>"
-                            f"</tr>",
-                            unsafe_allow_html=True)
+                        # Show category badge on first row of each category
+                        if i == 0:
+                            cat_cell = (f"<span style='background:{color};color:white;padding:3px 8px;"
+                                        f"border-radius:10px;font-size:0.72rem;font-weight:600;'>"
+                                        f"{emoji} {cat}</span>")
+                        else:
+                            cat_cell = ""
 
-                    st.markdown("</tbody></table>", unsafe_allow_html=True)
+                        table_html += (
+                            f"<tr style='background:{bg};'>"
+                            f"<td style='padding:6px 8px;border:1px solid #E2E8F0;vertical-align:top;'>{cat_cell}</td>"
+                            f"<td style='padding:6px 8px;border:1px solid #E2E8F0;font-weight:600;'>{tech}</td>"
+                            f"<td style='padding:6px 8px;border:1px solid #E2E8F0;color:#1D4ED8;'>{row.get('cloud_target','')}</td>"
+                            f"<td style='padding:6px 8px;border:1px solid #E2E8F0;color:{upg_color};'>{upg}</td>"
+                            f"<td style='padding:6px 8px;border:1px solid #E2E8F0;color:{repl_color};'>{repl}</td>"
+                            f"</tr>"
+                        )
+                        row_idx += 1
+
+                table_html += "</tbody></table>"
+                st.markdown(table_html, unsafe_allow_html=True)
 
                 # Store in context for the policy chat
                 st.session_state.a5_context["principles_table"] = json.dumps(table_data)
