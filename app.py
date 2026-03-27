@@ -2087,19 +2087,142 @@ if _show_strategist:
                 from agents.agent_analysis import generate_pptx
 
                 st.divider()
-                try:
-                    pptx_bytes = generate_pptx(
-                        table_data, wave_data, compliance_data, dep_data,
-                        cloud_name, selected_fams)
-                    pptx_fname = f"Migration_Strategy_{datetime.now().strftime('%Y%m%d_%H%M')}.pptx"
 
-                    st.download_button(
-                        "📊 Download PowerPoint Deck",
-                        data=pptx_bytes, file_name=pptx_fname,
-                        mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                        use_container_width=True)
+                # ── Excel export with all recommendations ────────────────────
+                try:
+                    import io
+                    from openpyxl import Workbook
+                    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+                    wb = Workbook()
+
+                    # Sheet 1: Guiding Principles
+                    ws1 = wb.active
+                    ws1.title = "Guiding Principles"
+                    hdr_fill = PatternFill(start_color="1E3A8A", end_color="1E3A8A", fill_type="solid")
+                    hdr_font = Font(bold=True, color="FFFFFF", size=10)
+                    thin_border = Border(
+                        left=Side(style='thin'), right=Side(style='thin'),
+                        top=Side(style='thin'), bottom=Side(style='thin'))
+
+                    gp_headers = ["Category", "Technology", "Cloud Target", "Upgrade Principle", "Replacement Principle"]
+                    for j, h in enumerate(gp_headers, 1):
+                        cell = ws1.cell(row=1, column=j, value=h)
+                        cell.fill = hdr_fill; cell.font = hdr_font; cell.border = thin_border
+                        cell.alignment = Alignment(wrap_text=True)
+                    for i, row in enumerate(table_data, 2):
+                        vals = [row.get("category",""), row.get("technology", row.get("os_family","")),
+                                row.get("cloud_target",""), row.get("upgrade_principle",""),
+                                row.get("replacement_principle","")]
+                        for j, v in enumerate(vals, 1):
+                            cell = ws1.cell(row=i, column=j, value=v)
+                            cell.border = thin_border; cell.alignment = Alignment(wrap_text=True)
+                    ws1.column_dimensions['A'].width = 14; ws1.column_dimensions['B'].width = 20
+                    ws1.column_dimensions['C'].width = 16; ws1.column_dimensions['D'].width = 50
+                    ws1.column_dimensions['E'].width = 50
+
+                    # Sheet 2: Cost Estimates
+                    ws2 = wb.create_sheet("Cost Estimates")
+                    cost_fill = PatternFill(start_color="92400E", end_color="92400E", fill_type="solid")
+                    cost_headers = ["Technology", "Category", "Upgrade Cost", "Replace Cost", "Do Nothing (Annual)", "Unit", "Source"]
+                    for j, h in enumerate(cost_headers, 1):
+                        cell = ws2.cell(row=1, column=j, value=h)
+                        cell.fill = cost_fill; cell.font = hdr_font; cell.border = thin_border
+                    for i, row in enumerate(costed_data, 2):
+                        vals = [row.get("technology", row.get("os_family","")), row.get("category",""),
+                                row.get("cost_upgrade",""), row.get("cost_replace",""),
+                                row.get("cost_do_nothing",""), row.get("cost_unit",""),
+                                row.get("cost_source","baseline")]
+                        for j, v in enumerate(vals, 1):
+                            cell = ws2.cell(row=i, column=j, value=v)
+                            cell.border = thin_border; cell.alignment = Alignment(wrap_text=True)
+                    for col, w in [('A',20),('B',12),('C',25),('D',25),('E',25),('F',10),('G',12)]:
+                        ws2.column_dimensions[col].width = w
+
+                    # Sheet 3: Migration Waves
+                    ws3 = wb.create_sheet("Migration Waves")
+                    wave_fill = PatternFill(start_color="1E3A8A", end_color="1E3A8A", fill_type="solid")
+                    wave_headers = ["Wave", "Timeline", "Urgency", "Technology", "Category", "Risk Score", "Days to EOL"]
+                    for j, h in enumerate(wave_headers, 1):
+                        cell = ws3.cell(row=1, column=j, value=h)
+                        cell.fill = wave_fill; cell.font = hdr_font; cell.border = thin_border
+                    for i, row in enumerate(wave_data, 2):
+                        vals = [row.get("wave_name",""), row.get("timeline",""), row.get("urgency",""),
+                                row.get("technology", row.get("os_family","")), row.get("category",""),
+                                row.get("risk_score",""), row.get("days_eol","")]
+                        for j, v in enumerate(vals, 1):
+                            cell = ws3.cell(row=i, column=j, value=v)
+                            cell.border = thin_border
+                    for col, w in [('A',25),('B',15),('C',12),('D',20),('E',14),('F',12),('G',12)]:
+                        ws3.column_dimensions[col].width = w
+
+                    # Sheet 4: Compliance Crosswalk
+                    ws4 = wb.create_sheet("Compliance Crosswalk")
+                    comp_fill = PatternFill(start_color="991B1B", end_color="991B1B", fill_type="solid")
+                    comp_headers = ["Technology", "Category", "Compliance Status", "Violations", "At Risk"]
+                    for j, h in enumerate(comp_headers, 1):
+                        cell = ws4.cell(row=1, column=j, value=h)
+                        cell.fill = comp_fill; cell.font = hdr_font; cell.border = thin_border
+                    for i, row in enumerate(compliance_data, 2):
+                        violations_str = "; ".join(f"{v['framework']}: {v['status']}" for v in row.get("compliance_violations",[]))
+                        warnings_str = "; ".join(f"{w['framework']}" for w in row.get("compliance_warnings",[]))
+                        vals = [row.get("technology", row.get("os_family","")), row.get("category",""),
+                                row.get("compliance_status",""), violations_str, warnings_str]
+                        for j, v in enumerate(vals, 1):
+                            cell = ws4.cell(row=i, column=j, value=v)
+                            cell.border = thin_border; cell.alignment = Alignment(wrap_text=True)
+                    for col, w in [('A',20),('B',14),('C',16),('D',50),('E',40)]:
+                        ws4.column_dimensions[col].width = w
+
+                    # Sheet 5: Dependencies
+                    ws5 = wb.create_sheet("Dependencies")
+                    dep_fill = PatternFill(start_color="065F46", end_color="065F46", fill_type="solid")
+                    dep_headers = ["Source Technology", "Source Category", "Depends On", "Dependency Type", "Note"]
+                    for j, h in enumerate(dep_headers, 1):
+                        cell = ws5.cell(row=1, column=j, value=h)
+                        cell.fill = dep_fill; cell.font = hdr_font; cell.border = thin_border
+                    row_num = 2
+                    for dep in dep_data:
+                        for d in dep.get("depends_on", []):
+                            vals = [dep.get("source",""), dep.get("source_category",""),
+                                    d.get("technology",""), d.get("type",""), dep.get("note","")]
+                            for j, v in enumerate(vals, 1):
+                                cell = ws5.cell(row=row_num, column=j, value=v)
+                                cell.border = thin_border; cell.alignment = Alignment(wrap_text=True)
+                            row_num += 1
+                    for col, w in [('A',20),('B',16),('C',20),('D',14),('E',50)]:
+                        ws5.column_dimensions[col].width = w
+
+                    excel_buf = io.BytesIO()
+                    wb.save(excel_buf)
+                    excel_buf.seek(0)
+                    excel_bytes = excel_buf.getvalue()
+                    excel_fname = f"Migration_Recommendations_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
                 except Exception:
-                    pass  # PPTX not available — skip silently
+                    excel_bytes = None
+
+                # ── Download buttons ─────────────────────────────────────────
+                dl_a, dl_b = st.columns(2)
+                with dl_a:
+                    if excel_bytes:
+                        st.download_button(
+                            "📥 Download Excel (All Recommendations)",
+                            data=excel_bytes, file_name=excel_fname,
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            use_container_width=True, type="primary")
+                with dl_b:
+                    try:
+                        pptx_bytes = generate_pptx(
+                            table_data, wave_data, compliance_data, dep_data,
+                            cloud_name, selected_fams)
+                        pptx_fname = f"Migration_Strategy_{datetime.now().strftime('%Y%m%d_%H%M')}.pptx"
+                        st.download_button(
+                            "📊 Download PowerPoint Deck",
+                            data=pptx_bytes, file_name=pptx_fname,
+                            mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                            use_container_width=True)
+                    except Exception:
+                        pass
 
                 # ── FYI note + auto-proceed ──────────────────────────────────
                 st.markdown("""<div style='background:#F0FDF4;border:1px solid #BBF7D0;border-radius:8px;
