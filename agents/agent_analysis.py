@@ -48,6 +48,69 @@ def categorize_os_families(os_df):
         families["Other"] = uncategorized
     return families
 
+# ── DB Family Categorization ──────────────────────────────────────────────────
+DB_FAMILY_RULES = [
+    ("SQL Server Family",       ["SQL Server", "Azure SQL"],
+     "SQL Server 2008–2025, Azure SQL MI/DB"),
+    ("Oracle Family",           ["Oracle DB", "Oracle"],
+     "Oracle 10g–23ai"),
+    ("PostgreSQL Family",       ["PostgreSQL", "Aurora PostgreSQL", "AlloyDB", "Cloud SQL PostgreSQL", "RDS PostgreSQL", "YugabyteDB", "CockroachDB", "TimescaleDB"],
+     "PostgreSQL, Aurora, AlloyDB, Cloud SQL, CockroachDB"),
+    ("MySQL/MariaDB Family",    ["MySQL", "MariaDB", "Aurora MySQL", "Cloud SQL MySQL", "RDS MySQL", "SingleStore"],
+     "MySQL, MariaDB, Aurora MySQL, SingleStore"),
+    ("NoSQL Document",          ["MongoDB", "Couchbase", "CouchDB", "DocumentDB", "Cosmos DB"],
+     "MongoDB, Couchbase, DocumentDB, Cosmos DB"),
+    ("NoSQL Key-Value & Cache", ["Redis", "ElastiCache", "Azure Cache", "DynamoDB"],
+     "Redis, DynamoDB, ElastiCache"),
+    ("IBM Legacy",              ["IBM Db2", "IBM IMS", "IBM Informix", "Db2"],
+     "Db2, IMS, Informix"),
+    ("SAP Databases",           ["SAP HANA", "SAP ASE", "SAP IQ", "SAP MaxDB", "SAP SQL Anywhere"],
+     "SAP HANA, ASE (Sybase), IQ, MaxDB"),
+    ("Analytics & Warehouse",   ["Snowflake", "Databricks", "BigQuery", "Teradata", "Vertica", "Greenplum", "Exasol"],
+     "Snowflake, Databricks, BigQuery, Teradata, Vertica"),
+    ("Search & Time-Series",    ["Elasticsearch", "OpenSearch", "InfluxDB", "Apache Hive", "HBase", "Hadoop"],
+     "Elasticsearch, OpenSearch, InfluxDB, Hive/HBase"),
+    ("Graph & Specialty",       ["Neo4j", "Apache Cassandra", "Firebird", "Progress", "Visual FoxPro", "Microsoft Access", "Actian"],
+     "Neo4j, Cassandra, Firebird, Access, Actian"),
+]
+
+def categorize_db_families(db_df):
+    """Categorize the DB dataframe into families."""
+    families = {}
+    uncategorized = []
+    for _, row in db_df.iterrows():
+        db_name = str(row.get("Database", ""))
+        ver = str(row.get("Version", ""))
+        full = f"{db_name} {ver}".strip()
+        matched = False
+        for fam_name, keywords, _ in DB_FAMILY_RULES:
+            if any(kw.lower() in db_name.lower() for kw in keywords):
+                families.setdefault(fam_name, []).append(full)
+                matched = True
+                break
+        if not matched and db_name:
+            uncategorized.append(full)
+    if uncategorized:
+        families["Other"] = uncategorized
+    return families
+
+def get_db_family_display():
+    """Return list of (family_name, description, emoji) for DB UI display."""
+    return [
+        ("SQL Server Family",       "SQL Server 2008–2025, Azure SQL", "🔷"),
+        ("Oracle Family",           "Oracle 10g–23ai", "🔴"),
+        ("PostgreSQL Family",       "PostgreSQL, Aurora, AlloyDB, CockroachDB", "🐘"),
+        ("MySQL/MariaDB Family",    "MySQL, MariaDB, Aurora MySQL, SingleStore", "🐬"),
+        ("NoSQL Document",          "MongoDB, Couchbase, DocumentDB, Cosmos DB", "📄"),
+        ("NoSQL Key-Value & Cache", "Redis, DynamoDB, ElastiCache", "⚡"),
+        ("IBM Legacy",              "Db2, IMS, Informix", "🏢"),
+        ("SAP Databases",           "SAP HANA, ASE, IQ, MaxDB", "💎"),
+        ("Analytics & Warehouse",   "Snowflake, Databricks, BigQuery, Teradata", "📊"),
+        ("Search & Time-Series",    "Elasticsearch, OpenSearch, InfluxDB", "🔍"),
+        ("Graph & Specialty",       "Neo4j, Cassandra, Firebird, Access", "🕸️"),
+        ("Other",                   "Other DB not listed above", "❓"),
+    ]
+
 def get_family_display():
     """Return list of (family_name, description, emoji) for UI display."""
     return [
@@ -949,6 +1012,8 @@ class PolicyAnalysisAgent:
             "a5_landscape_families": {},
             "a5_landscape_selected": [],
             "a5_landscape_other_pending": False,
+            "a5_db_landscape_families": {},
+            "a5_db_landscape_selected": [],
             "a5_custom_cloud_profiles": [],
         }
         for k, v in defaults.items():
@@ -965,8 +1030,10 @@ class PolicyAnalysisAgent:
                   "a5_ws_done","a5_as_done","a5_fw_done",
                   "a5_preflight_done","a5_log",
                   "a5_landscape_families","a5_landscape_selected",
-                  "a5_landscape_other_pending","a5_custom_cloud_profiles",
-                  "a5_principles_table_data"]:
+                  "a5_landscape_other_pending",
+                  "a5_db_landscape_families","a5_db_landscape_selected",
+                  "a5_custom_cloud_profiles",
+                  "a5_principles_table_data","a5_costed_data"]:
             st.session_state.pop(k, None)
         PolicyAnalysisAgent.init_session()
 

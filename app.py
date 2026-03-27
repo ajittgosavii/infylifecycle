@@ -654,9 +654,9 @@ if run_a2:
 _show_strategist = st.session_state.get("show_strategist", False)
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
-tab_dash, tab_os, tab_db, tab_ws, tab_as, tab_fw = st.tabs([
+tab_dash, tab_os, tab_db, tab_wsas, tab_fw = st.tabs([
     "📊 Dashboard", "🖥️ OS Versions", "🗄️ DB Versions",
-    "🌐 Web Servers", "⚙️ App Servers", "📦 Frameworks",
+    "🌐 Web & App Servers", "📦 Frameworks",
 ])
 
 if _show_strategist:
@@ -921,8 +921,8 @@ with tab_db:
     )
 
 
-# ────────────────── Tab: Web Servers ───────────────────────────────────────────
-with tab_ws:
+# ────────────────── Tab: Web & App Servers ─────────────────────────────────────
+with tab_wsas:
     ws_df = st.session_state.ws_df
     st.subheader("🌐 Web Server Versions")
     st.caption("Lifecycle tracking for IIS, Nginx, Apache and other web servers")
@@ -987,8 +987,8 @@ with tab_ws:
     )
 
 
-# ────────────────── Tab: Application Servers ──────────────────────────────────
-with tab_as:
+    # ────────────────── Section: Application Servers ─────────────────────────
+    st.divider()
     as_df = st.session_state.as_df
     st.subheader("⚙️ Application Server Versions")
     st.caption("Lifecycle tracking for Tomcat, JBoss, WebSphere, Kafka, RabbitMQ, Kubernetes and more")
@@ -1145,12 +1145,13 @@ if _show_strategist:
         a5s = st.session_state.get("a5_status", "idle")
 
         # ── Progress stepper ──────────────────────────────────────────────────
-        steps    = ["🗺️ Landscape", "☁️ Cloud", "📋 Principles", "💬 Policy Chat", "⚖️ GP Generate", "💰 Cost Intel", "🧠 Analysis", "✅ Complete"]
+        steps    = ["🗺️ OS", "🗄️ DB", "☁️ Cloud", "📋 Principles & Costs", "💬 Policy Chat", "⚖️ GP Generate", "💰 Cost Intel", "🧠 Analysis", "✅ Done"]
         step_map = {"idle":0,"landscape":0,"landscape_other":0,
-                    "cloud_profile":1,"cloud_other":1,
-                    "principles_table":2,
-                    "chatting":3,"principles":4,"costing":5,
-                    "ready":5,"analysing":6,"done":7}
+                    "db_landscape":1,"db_landscape_other":1,
+                    "cloud_profile":2,"cloud_other":2,
+                    "principles_table":3,
+                    "chatting":4,"principles":5,"costing":6,
+                    "ready":6,"analysing":7,"done":8}
         cur_step = step_map.get(a5s, 0)
         s_cols   = st.columns(len(steps))
         for i, (col, lbl) in enumerate(zip(s_cols, steps)):
@@ -1236,10 +1237,10 @@ if _show_strategist:
                 if "Other" in selected:
                     st.session_state.a5_status = "landscape_other"
                 else:
-                    # Store landscape context for the cloud profile phase
+                    # Store landscape context and proceed to DB landscape
                     st.session_state.a5_context["os_landscape"] = ", ".join(
                         [f for f in selected if f != "Other"])
-                    st.session_state.a5_status = "cloud_profile"
+                    st.session_state.a5_status = "db_landscape"
                 st.rerun()
 
         # ── PHASE 0b: OTHER OS HANDLING ──────────────────────────────────────
@@ -1277,10 +1278,10 @@ if _show_strategist:
                         f"_{result.get('explanation', '')}_"
                     )
                     st.info("No changes needed. Click below to proceed.")
-                    if st.button("➡️ Proceed to Cloud Profile", key="proceed_after_match"):
+                    if st.button("➡️ Proceed to DB Landscape", key="proceed_after_match"):
                         st.session_state.a5_context["os_landscape"] = ", ".join(
                             [f for f in st.session_state.a5_landscape_selected if f != "Other"])
-                        st.session_state.a5_status = "cloud_profile"
+                        st.session_state.a5_status = "db_landscape"
                         st.rerun()
 
                 elif result.get("is_valid_os"):
@@ -1349,8 +1350,110 @@ if _show_strategist:
             if st.button("⏭️ Skip — Proceed without adding", use_container_width=True):
                 st.session_state.a5_context["os_landscape"] = ", ".join(
                     [f for f in st.session_state.a5_landscape_selected if f != "Other"])
-                st.session_state.a5_status = "cloud_profile"
+                st.session_state.a5_status = "db_landscape"
                 st.rerun()
+
+        # ── PHASE 0b2: DB LANDSCAPE SURVEY ──────────────────────────────────
+        elif a5s in ("db_landscape", "db_landscape_other"):
+            from agents.agent_analysis import categorize_db_families, get_db_family_display
+
+            if a5s == "db_landscape":
+                db_families = categorize_db_families(st.session_state.db_df)
+                st.session_state.a5_db_landscape_families = db_families
+
+                st.markdown("""
+                <div style="background:linear-gradient(135deg,#FDF2F8,#FAE8FF);
+                            border:1px solid #E9D5FF;border-radius:12px;
+                            padding:1.2rem 1.4rem;margin-bottom:1rem;">
+                  <h3 style="margin:0 0 0.5rem;color:#7C2D12;font-size:1.05rem;">
+                    🗄️ Database Landscape Survey
+                  </h3>
+                  <p style="margin:0;color:#374151;font-size:0.88rem;">
+                    I have categorized your database landscape into <strong>""" + str(len([f for f in db_families if f != "Other"])) + """ families</strong>.
+                    <strong>Which database families are in your active IT landscape?</strong>
+                  </p>
+                </div>""", unsafe_allow_html=True)
+
+                family_display = get_db_family_display()
+                selected_db = []
+
+                with st.form("db_landscape_form"):
+                    for fam_name, desc, emoji in family_display:
+                        count = len(db_families.get(fam_name, []))
+                        if fam_name == "Other":
+                            versions_preview = ""
+                            default = False
+                        else:
+                            if count == 0:
+                                continue
+                            versions_preview = ", ".join(db_families[fam_name][:3])
+                            if count > 3:
+                                versions_preview += f" +{count - 3} more"
+                            default = True
+
+                        col1, col2 = st.columns([1, 4])
+                        with col1:
+                            checked = st.checkbox(f"{emoji} {fam_name}", value=default, key=f"dls_{fam_name}")
+                        with col2:
+                            st.markdown(
+                                f"<small style='color:#6B7280;'>{desc}"
+                                + (f" — <em>{versions_preview}</em>" if versions_preview else "")
+                                + f" ({count} tracked)</small>", unsafe_allow_html=True)
+                        if checked:
+                            selected_db.append(fam_name)
+
+                    st.divider()
+                    submitted = st.form_submit_button(
+                        "✅ Confirm DB Landscape → Proceed to Cloud Profile",
+                        type="primary", use_container_width=True)
+
+                if submitted:
+                    st.session_state.a5_db_landscape_selected = selected_db
+                    if "Other" in selected_db:
+                        st.session_state.a5_status = "db_landscape_other"
+                    else:
+                        st.session_state.a5_context["db_landscape"] = ", ".join(
+                            [f for f in selected_db if f != "Other"])
+                        st.session_state.a5_status = "cloud_profile"
+                    st.rerun()
+
+            # ── DB "Other" handling ──────────────────────────────────────────
+            elif a5s == "db_landscape_other":
+                st.markdown("""
+                <div style="background:#FFF7ED;border:1px solid #FED7AA;border-radius:12px;
+                            padding:1rem 1.2rem;margin-bottom:1rem;">
+                  <h4 style="margin:0 0 0.4rem;color:#92400E;font-size:0.95rem;">
+                    ❓ You selected "Other" — Tell us about your additional database
+                  </h4>
+                  <p style="margin:0;color:#78716C;font-size:0.82rem;">
+                    Agent 5 will check if we already track it or if it needs to be added.
+                  </p>
+                </div>""", unsafe_allow_html=True)
+
+                other_db_input = st.text_input(
+                    "What database is missing?",
+                    placeholder="e.g. ClickHouse, ScyllaDB, TiDB, FaunaDB...",
+                    key="a5_other_db_input"
+                )
+
+                if st.button("🔍 Verify Database", type="primary", disabled=not (key_ok and other_db_input)):
+                    with st.spinner("🧠 Agent 5 checking..."):
+                        agent5 = PolicyAnalysisAgent(api_key=api_key)
+                        # Check against DB dataframe
+                        known = st.session_state.db_df["Database"].str.lower().tolist()
+                        if any(other_db_input.lower() in k for k in known):
+                            st.success(f"✅ **\"{other_db_input}\" is already tracked** in the baseline.")
+                        else:
+                            st.warning(f"🆕 **{other_db_input}** is not in the baseline. "
+                                       f"It will be noted for the policy conversation.")
+                            st.session_state.a5_context["additional_db"] = other_db_input
+
+                st.divider()
+                if st.button("➡️ Proceed to Cloud Profile", use_container_width=True):
+                    st.session_state.a5_context["db_landscape"] = ", ".join(
+                        [f for f in st.session_state.a5_db_landscape_selected if f != "Other"])
+                    st.session_state.a5_status = "cloud_profile"
+                    st.rerun()
 
         # ── PHASE 0c: CLOUD PROFILE SELECTION ────────────────────────────────
         elif a5s in ("cloud_profile", "cloud_other"):
@@ -1889,34 +1992,32 @@ if _show_strategist:
                         cloud_name, selected_fams)
                     pptx_fname = f"Migration_Strategy_{datetime.now().strftime('%Y%m%d_%H%M')}.pptx"
 
-                    dl1, dl2, dl3 = st.columns(3)
-                    with dl1:
-                        st.download_button(
-                            "📊 Download PowerPoint Deck",
-                            data=pptx_bytes, file_name=pptx_fname,
-                            mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                            use_container_width=True, type="primary")
-                    with dl2:
-                        if st.button("✅ Accept → Proceed to Policy Chat",
-                                     use_container_width=True):
-                            st.session_state.a5_status = "chatting"
-                            st.rerun()
-                    with dl3:
-                        if st.button("🔄 Regenerate with AI", use_container_width=True):
-                            st.session_state.pop("a5_principles_table_data", None)
-                            st.rerun()
-                except Exception as e:
-                    st.warning(f"PowerPoint export requires python-pptx: `pip install python-pptx` ({e})")
-                    dl1, dl2 = st.columns(2)
-                    with dl1:
-                        if st.button("✅ Accept → Proceed to Policy Chat",
-                                     type="primary", use_container_width=True):
-                            st.session_state.a5_status = "chatting"
-                            st.rerun()
-                    with dl2:
-                        if st.button("🔄 Regenerate with AI", use_container_width=True):
-                            st.session_state.pop("a5_principles_table_data", None)
-                            st.rerun()
+                    st.download_button(
+                        "📊 Download PowerPoint Deck",
+                        data=pptx_bytes, file_name=pptx_fname,
+                        mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                        use_container_width=True)
+                except Exception:
+                    pass  # PPTX not available — skip silently
+
+                # ── FYI note + auto-proceed ──────────────────────────────────
+                st.markdown("""<div style='background:#F0FDF4;border:1px solid #BBF7D0;border-radius:8px;
+                    padding:0.6rem 1rem;margin-top:0.5rem;font-size:0.85rem;color:#166534;'>
+                    ℹ️ <strong>For Your Information:</strong> The above principles, costs, waves, dependencies,
+                    and compliance mapping are based on your OS/DB landscape and cloud selection.
+                    Proceeding to Policy Chat where Agent 5 will use this context for tailored recommendations.
+                </div>""", unsafe_allow_html=True)
+
+                dl1, dl2 = st.columns([3, 1])
+                with dl1:
+                    if st.button("➡️ Proceed to Policy Chat", type="primary", use_container_width=True):
+                        st.session_state.a5_status = "chatting"
+                        st.rerun()
+                with dl2:
+                    if st.button("🔄 Regenerate", use_container_width=True):
+                        st.session_state.pop("a5_principles_table_data", None)
+                        st.session_state.pop("a5_costed_data", None)
+                        st.rerun()
             else:
                 st.warning("No OS families selected. Go back to the Landscape Survey.")
                 if st.button("⬅️ Back to Landscape Survey"):
