@@ -9,6 +9,7 @@ Agent 1's job is ONLY to verify/update these dates from the internet.
 OS_COLUMNS = [
     "OS Version", "Availability Date", "Security/Standard Support End",
     "Mainstream/Full Support End", "Extended/LTSC Support End",
+    "Min CPU", "Min RAM",
     "Notes", "Recommendation", "Upgrade", "Replace",
     "Primary Alternative", "Secondary Alternative"
 ]
@@ -16,20 +17,25 @@ OS_COLUMNS = [
 DB_COLUMNS = [
     "Database", "Version", "Type",
     "Mainstream / Premier End", "Extended Support End",
-    "Status", "Notes", "Recommendation",
+    "Status", "Min CPU", "Min RAM",
+    "Notes", "Recommendation",
     "Upgrade", "Replace", "Primary Alternative", "Secondary Alternative"
 ]
 
-def _os(ver, avail="", sec="", main="", ext="", notes="", rec="", upg="N", repl="N", pri="", sec2=""):
+def _os(ver, avail="", sec="", main="", ext="", notes="", rec="", upg="N", repl="N", pri="", sec2="",
+        min_cpu="", min_ram=""):
     return {"OS Version": ver, "Availability Date": avail,
             "Security/Standard Support End": sec, "Mainstream/Full Support End": main,
-            "Extended/LTSC Support End": ext, "Notes": notes, "Recommendation": rec,
+            "Extended/LTSC Support End": ext, "Min CPU": min_cpu, "Min RAM": min_ram,
+            "Notes": notes, "Recommendation": rec,
             "Upgrade": upg, "Replace": repl, "Primary Alternative": pri, "Secondary Alternative": sec2}
 
-def _db(db, ver, typ, main="", ext="", status="Supported", notes="", rec="", upg="N", repl="N", pri="", sec=""):
+def _db(db, ver, typ, main="", ext="", status="Supported", notes="", rec="", upg="N", repl="N", pri="", sec="",
+        min_cpu="", min_ram=""):
     return {"Database": db, "Version": ver, "Type": typ,
             "Mainstream / Premier End": main, "Extended Support End": ext,
-            "Status": status, "Notes": notes, "Recommendation": rec,
+            "Status": status, "Min CPU": min_cpu, "Min RAM": min_ram,
+            "Notes": notes, "Recommendation": rec,
             "Upgrade": upg, "Replace": repl, "Primary Alternative": pri, "Secondary Alternative": sec}
 
 # =============================================================================
@@ -844,3 +850,145 @@ FW_DATA = [
     _fw("Ruby on Rails", "8.0.x", "Ruby Framework", "2027-10-01", "", "Supported", "Latest release; Hotwire-first", "", "N", "N", "", ""),
 
 ]
+
+
+# =============================================================================
+# Auto-populate Min CPU / Min RAM based on OS and DB known requirements
+# =============================================================================
+_OS_HW_REQS = [
+    # (keyword_in_name, min_cpu, min_ram)
+    # Windows Client
+    ("Windows 11",          "2 cores (1 GHz 64-bit)", "4 GB"),
+    ("Windows 10",          "1 core (1 GHz)", "2 GB"),
+    ("Windows 8",           "1 core (1 GHz)", "1 GB"),
+    ("Windows 7",           "1 core (1 GHz)", "1 GB"),
+    # Windows Server
+    ("Windows Server 2025", "1 core (1.4 GHz 64-bit)", "2 GB"),
+    ("Windows Server 2022", "1 core (1.4 GHz 64-bit)", "2 GB"),
+    ("Windows Server 2019", "1 core (1.4 GHz 64-bit)", "2 GB"),
+    ("Windows Server 2016", "1 core (1.4 GHz 64-bit)", "2 GB"),
+    ("Windows Server 2012", "1 core (1.4 GHz 64-bit)", "2 GB"),
+    ("Windows Server 2008", "1 core (1 GHz)", "2 GB"),
+    ("Windows Server 2003", "1 core (550 MHz)", "256 MB"),
+    ("Windows Server",      "1 core (1.4 GHz 64-bit)", "2 GB"),
+    # RHEL
+    ("RHEL 9",              "1 core (1 GHz)", "1.5 GB"),
+    ("RHEL 8",              "1 core (1 GHz)", "1.5 GB"),
+    ("RHEL 7",              "1 core (1 GHz)", "1 GB"),
+    ("RHEL 6",              "1 core", "1 GB"),
+    ("RHEL 5",              "1 core", "512 MB"),
+    ("RHEL",                "1 core", "1 GB"),
+    # Ubuntu
+    ("Ubuntu",              "1 core (1 GHz)", "1 GB"),
+    # Debian
+    ("Debian",              "1 core", "512 MB"),
+    # SLES
+    ("SLES 15",             "1 core", "1 GB"),
+    ("SLES 12",             "1 core", "512 MB"),
+    ("SLES",                "1 core", "512 MB"),
+    # CentOS / Rocky / Alma / Oracle Linux
+    ("CentOS",              "1 core", "1 GB"),
+    ("Rocky",               "1 core (1 GHz)", "1.5 GB"),
+    ("AlmaLinux",           "1 core (1 GHz)", "1.5 GB"),
+    ("Oracle Linux",        "1 core", "1 GB"),
+    # macOS
+    ("macOS",               "Apple Silicon / 2 cores", "8 GB"),
+    # AIX
+    ("AIX",                 "1 POWER core", "2 GB"),
+    # HP-UX
+    ("HP-UX",               "1 PA-RISC/Itanium core", "1 GB"),
+    # Solaris
+    ("Solaris",             "1 SPARC/x86 core", "1 GB"),
+    # FreeBSD
+    ("FreeBSD",             "1 core", "512 MB"),
+    # OpenVMS
+    ("OpenVMS",             "1 core (Alpha/Itanium/x86)", "512 MB"),
+    # Tru64
+    ("Tru64",               "1 Alpha core", "256 MB"),
+    # Fedora
+    ("Fedora",              "1 core", "2 GB"),
+    # iOS / Android
+    ("iOS",                 "A-series chip", "2 GB"),
+    ("Android",             "ARM 1 core", "1 GB"),
+    # ChromeOS
+    ("ChromeOS",            "1 core", "4 GB"),
+    # IBM i
+    ("IBM i",               "1 POWER core", "4 GB"),
+    # z/OS
+    ("z/OS",                "1 zIIP/CP", "4 GB"),
+    # Raspberry Pi
+    ("Raspberry Pi",        "ARM 1 core", "512 MB"),
+]
+
+_DB_HW_REQS = [
+    # (keyword_in_db_name, min_cpu, min_ram)
+    ("SQL Server",          "2 cores (1.4 GHz)", "2 GB"),
+    ("Azure SQL",           "2 vCPUs", "4 GB"),
+    ("Oracle DB",           "2 cores", "4 GB"),
+    ("Oracle",              "2 cores", "4 GB"),
+    ("PostgreSQL",          "1 core", "1 GB"),
+    ("MySQL",               "1 core", "512 MB"),
+    ("MariaDB",             "1 core", "512 MB"),
+    ("MongoDB",             "2 cores", "4 GB"),
+    ("Redis",               "1 core", "256 MB"),
+    ("ElastiCache",         "1 vCPU", "1 GB"),
+    ("DynamoDB",            "Serverless", "Serverless"),
+    ("Cassandra",           "2 cores", "4 GB"),
+    ("Elasticsearch",       "2 cores", "4 GB"),
+    ("OpenSearch",          "2 cores", "4 GB"),
+    ("IBM Db2",             "2 cores", "4 GB"),
+    ("IBM IMS",             "1 zIIP/CP", "4 GB"),
+    ("IBM Informix",        "1 core", "1 GB"),
+    ("SAP HANA",            "4 cores", "32 GB"),
+    ("SAP ASE",             "2 cores", "4 GB"),
+    ("SAP IQ",              "2 cores", "8 GB"),
+    ("SAP MaxDB",           "1 core", "2 GB"),
+    ("SAP SQL Anywhere",    "1 core", "1 GB"),
+    ("Snowflake",           "Serverless", "Serverless"),
+    ("Databricks",          "Serverless", "Serverless"),
+    ("BigQuery",            "Serverless", "Serverless"),
+    ("Teradata",            "4 cores", "16 GB"),
+    ("Vertica",             "2 cores", "8 GB"),
+    ("Greenplum",           "4 cores", "16 GB"),
+    ("Neo4j",               "2 cores", "2 GB"),
+    ("InfluxDB",            "2 cores", "2 GB"),
+    ("TimescaleDB",         "2 cores", "4 GB"),
+    ("CockroachDB",         "2 cores", "4 GB"),
+    ("YugabyteDB",          "2 cores", "4 GB"),
+    ("Couchbase",           "4 cores", "4 GB"),
+    ("CouchDB",             "1 core", "1 GB"),
+    ("Cosmos DB",           "Serverless", "Serverless"),
+    ("DocumentDB",          "2 vCPUs", "4 GB"),
+    ("HBase",               "4 cores", "8 GB"),
+    ("Hadoop",              "4 cores", "8 GB"),
+    ("Hive",                "2 cores", "4 GB"),
+    ("Firebird",            "1 core", "256 MB"),
+    ("Progress OpenEdge",   "1 core", "2 GB"),
+    ("SingleStore",         "4 cores", "8 GB"),
+    ("Exasol",              "2 cores", "8 GB"),
+    ("Microsoft Access",    "1 core", "256 MB"),
+    ("Visual FoxPro",       "1 core", "128 MB"),
+    ("Aurora",              "2 vCPUs", "4 GB"),
+    ("Cloud SQL",           "1 vCPU", "3.75 GB"),
+    ("AlloyDB",             "2 vCPUs", "8 GB"),
+    ("Cloud Spanner",       "Serverless", "Serverless"),
+    ("RDS",                 "1 vCPU", "1 GB"),
+    ("Actian",              "2 cores", "4 GB"),
+]
+
+def _apply_hw_reqs(data_list, hw_reqs, name_key):
+    """Apply Min CPU/RAM defaults to data entries that don't have them set."""
+    for item in data_list:
+        if item.get("Min CPU") and item.get("Min RAM"):
+            continue
+        name = item.get(name_key, "")
+        for keyword, cpu, ram in hw_reqs:
+            if keyword.lower() in name.lower():
+                if not item.get("Min CPU"):
+                    item["Min CPU"] = cpu
+                if not item.get("Min RAM"):
+                    item["Min RAM"] = ram
+                break
+
+_apply_hw_reqs(OS_DATA, _OS_HW_REQS, "OS Version")
+_apply_hw_reqs(DB_DATA, _DB_HW_REQS, "Database")
