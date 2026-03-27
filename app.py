@@ -1927,19 +1927,24 @@ if _show_strategist:
                         st.success("✅ Costs saved!")
                         st.rerun()
                 else:
-                    # ── Read-only styled table ───────────────────────────────
-                    st.markdown(
+                    # ── Read-only styled table (single HTML block) ──────────
+                    cost_html = (
                         "<table style='width:100%;border-collapse:collapse;font-size:0.8rem;table-layout:fixed;'>"
+                        "<colgroup>"
+                        "<col style='width:13%;'/><col style='width:8%;'/>"
+                        "<col style='width:22%;'/><col style='width:22%;'/><col style='width:22%;'/>"
+                        "<col style='width:6%;'/><col style='width:7%;'/>"
+                        "</colgroup>"
                         "<thead><tr style='background:#92400E;color:white;'>"
-                        "<th style='padding:8px;border:1px solid #FED7AA;width:14%;'>Technology</th>"
-                        "<th style='padding:8px;border:1px solid #FED7AA;width:8%;'>Category</th>"
-                        "<th style='padding:8px;border:1px solid #FED7AA;width:22%;'>💚 Upgrade Cost</th>"
-                        "<th style='padding:8px;border:1px solid #FED7AA;width:22%;'>🔵 Replace Cost</th>"
-                        "<th style='padding:8px;border:1px solid #FED7AA;width:22%;'>🔴 Do Nothing (Annual)</th>"
-                        "<th style='padding:8px;border:1px solid #FED7AA;width:6%;'>Unit</th>"
-                        "<th style='padding:8px;border:1px solid #FED7AA;width:6%;'>Source</th>"
-                        "</tr></thead><tbody>", unsafe_allow_html=True)
-
+                        "<th style='padding:8px;border:1px solid #FED7AA;'>Technology</th>"
+                        "<th style='padding:8px;border:1px solid #FED7AA;'>Category</th>"
+                        "<th style='padding:8px;border:1px solid #FED7AA;'>💚 Upgrade Cost</th>"
+                        "<th style='padding:8px;border:1px solid #FED7AA;'>🔵 Replace Cost</th>"
+                        "<th style='padding:8px;border:1px solid #FED7AA;'>🔴 Do Nothing (Annual)</th>"
+                        "<th style='padding:8px;border:1px solid #FED7AA;'>Unit</th>"
+                        "<th style='padding:8px;border:1px solid #FED7AA;'>Source</th>"
+                        "</tr></thead><tbody>"
+                    )
                     for i, row in enumerate(costed_data):
                         bg = "#FFFBEB" if i % 2 == 0 else "#FFF7ED"
                         tech = row.get("technology", row.get("os_family", ""))
@@ -1949,8 +1954,7 @@ if _show_strategist:
                                      "baseline": "background:#F1F5F9;color:#64748B"}.get(src, "")
                         note = row.get("cost_note", "")
                         note_html = f"<br><small style='color:#9CA3AF;'>{note}</small>" if note else ""
-
-                        st.markdown(
+                        cost_html += (
                             f"<tr style='background:{bg};'>"
                             f"<td style='padding:6px 8px;border:1px solid #FDE68A;font-weight:600;'>{tech}{note_html}</td>"
                             f"<td style='padding:6px 8px;border:1px solid #FDE68A;'>{row.get('category','')}</td>"
@@ -1960,8 +1964,10 @@ if _show_strategist:
                             f"<td style='padding:6px 8px;border:1px solid #FDE68A;'>{row.get('cost_unit','')}</td>"
                             f"<td style='padding:6px 8px;border:1px solid #FDE68A;'>"
                             f"<span style='{src_badge};padding:2px 6px;border-radius:10px;font-size:0.7rem;'>{src}</span></td>"
-                            f"</tr>", unsafe_allow_html=True)
-                    st.markdown("</tbody></table>", unsafe_allow_html=True)
+                            f"</tr>"
+                        )
+                    cost_html += "</tbody></table>"
+                    st.markdown(cost_html, unsafe_allow_html=True)
 
                 # ══════════════════════════════════════════════════════════════
                 # MIGRATION WAVE PLANNER
