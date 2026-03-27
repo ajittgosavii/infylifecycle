@@ -123,10 +123,31 @@ Expected format:
 
 
 class RecommendationAgent:
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, guiding_principles=None):
         self.client     = OpenAI(api_key=api_key)
         self.model      = "gpt-4o-mini"   # cheap, fast, no tools needed
         self.batch_size = 20
+        self.guiding_principles = guiding_principles  # From Agent 5 Strategist
+
+    def _get_gp_context(self, kind="OS"):
+        """Build guiding principles context string for system prompts."""
+        if not self.guiding_principles:
+            return ""
+        # Filter principles relevant to this kind
+        kind_map = {"OS": "OS", "DB": "Database", "WS": "Web Server", "AS": "App Server", "FW": "Framework"}
+        cat = kind_map.get(kind, kind)
+        relevant = [p for p in self.guiding_principles if p.get("category") == cat]
+        if not relevant:
+            return ""
+        gp_lines = "\n".join(
+            f"- {p.get('technology','?')}: UPGRADE={p.get('upgrade_principle','')[:80]} | "
+            f"REPLACE={p.get('replacement_principle','')[:80]}"
+            for p in relevant)
+        return (
+            f"\n\nGUIDING PRINCIPLES (from the organization's migration strategy):\n"
+            f"Your recommendations MUST align with these approved principles:\n{gp_lines}\n"
+            f"Reference the guiding principle when your recommendation aligns with it."
+        )
 
     # ── OS recommendations ────────────────────────────────────────────────────
     def generate_os_recommendations(self, df: pd.DataFrame,
@@ -344,6 +365,11 @@ class RecommendationAgent:
             prompt = BATCH_PROMPT_GENERIC.format(kind_label="framework / runtime", rows=rows_text)
             system = FW_SYSTEM
             key_fn = lambda r: f"{r.get(name_col,'?')} {r.get('Version','?')}"
+
+        # Inject guiding principles context if available
+        gp_ctx = self._get_gp_context(kind)
+        if gp_ctx:
+            system = system + gp_ctx
 
         # Attempt: OpenAI Chat Completions API
         try:

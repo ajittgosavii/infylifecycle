@@ -583,7 +583,11 @@ if run_a2:
         st.stop()
 
     # ── Checkpoint 2: OS Recommendations ─────────────────────────────────────
-    agent2 = RecommendationAgent(api_key=api_key)   # ← instantiate here
+    # Pass Guiding Principles to Agent 2 if they exist (from Strategist survey)
+    _gp_data = st.session_state.get("a5_principles_table_data")
+    agent2 = RecommendationAgent(api_key=api_key, guiding_principles=_gp_data)
+    if _gp_data:
+        st.info(f"📋 Agent 2 will align recommendations with **{len(_gp_data)} Guiding Principles** from the Strategist survey.")
     chk2 = st.empty()
     chk2.info(f"🧠 **Checkpoint 2/4** — OpenAI generating OS recommendations "
               f"({len(st.session_state.os_df)} rows, batches of 20)...")
@@ -675,6 +679,88 @@ if run_a2:
         f"DB: {db_filled}/{len(st.session_state.db_df)} rows | "
         f"Total: **{total} recommendations** · 💾 **Persisted to database**"
     )
+
+    # ── Comparison with Guiding Principles if available ─────────────────────
+    _gp_data = st.session_state.get("a5_principles_table_data")
+    if _gp_data:
+        st.divider()
+        st.subheader("📋 Agent 2 Recommendations vs Guiding Principles")
+        st.caption("Cross-referencing Agent 2's technical recommendations against the Strategist's Guiding Principles.")
+
+        compare_html = (
+            "<table style='width:100%;border-collapse:collapse;font-size:0.8rem;table-layout:fixed;'>"
+            "<colgroup><col style='width:10%;'/><col style='width:12%;'/>"
+            "<col style='width:39%;'/><col style='width:39%;'/></colgroup>"
+            "<thead><tr style='background:#1E293B;color:white;'>"
+            "<th style='padding:8px;border:1px solid #334155;'>Category</th>"
+            "<th style='padding:8px;border:1px solid #334155;'>Technology</th>"
+            "<th style='padding:8px;border:1px solid #334155;'>🤖 Agent 2 Recommendation</th>"
+            "<th style='padding:8px;border:1px solid #334155;'>📋 Guiding Principle (Strategist)</th>"
+            "</tr></thead><tbody>"
+        )
+
+        # Build lookup from Agent 2 recommendations
+        all_dfs = [
+            (st.session_state.os_df, "OS Version", "OS"),
+            (st.session_state.db_df, "Database", "Database"),
+            (st.session_state.ws_df, "Web Server", "Web Server"),
+            (st.session_state.as_df, "App Server", "App Server"),
+            (st.session_state.fw_df, "Framework", "Framework"),
+        ]
+        a2_lookup = {}
+        for df, name_col, cat in all_dfs:
+            for _, row in df.iterrows():
+                key = str(row.get(name_col, "")).lower()
+                rec = str(row.get("Recommendation", ""))
+                if rec.strip():
+                    a2_lookup[key] = {"rec": rec, "category": cat, "name": str(row.get(name_col, ""))}
+
+        row_idx = 0
+        for gp in _gp_data:
+            tech = gp.get("technology", gp.get("os_family", ""))
+            cat = gp.get("category", "OS")
+            gp_text = f"<strong>Upgrade:</strong> {gp.get('upgrade_principle','')}<br><strong>Replace:</strong> {gp.get('replacement_principle','')}"
+
+            # Find matching Agent 2 recommendation
+            a2_rec = ""
+            for key, data in a2_lookup.items():
+                if tech.lower() in key or key in tech.lower():
+                    a2_rec = data["rec"]
+                    break
+
+            # Determine alignment
+            if not a2_rec:
+                a2_cell = "<em style='color:#9CA3AF;'>No Agent 2 recommendation yet</em>"
+                align_color = "#F8FAFC"
+            else:
+                a2_cell = a2_rec
+                # Check rough alignment
+                if any(w in a2_rec.upper() for w in ["CRITICAL", "URGENT", "MIGRATE"]) and \
+                   any(w in gp_text.upper() for w in ["CRITICAL", "MANDATORY", "MIGRATE"]):
+                    align_color = "#FEE2E2"  # Both urgent — red tint
+                elif "SUPPORTED" in a2_rec.upper() and "MONITOR" in gp_text.upper():
+                    align_color = "#DCFCE7"  # Both OK — green tint
+                else:
+                    align_color = "#FFFBEB" if row_idx % 2 == 0 else "#FFF7ED"
+
+            bg = align_color
+            compare_html += (
+                f"<tr style='background:{bg};'>"
+                f"<td style='padding:6px 8px;border:1px solid #E2E8F0;font-weight:600;'>{cat}</td>"
+                f"<td style='padding:6px 8px;border:1px solid #E2E8F0;font-weight:600;'>{tech}</td>"
+                f"<td style='padding:6px 8px;border:1px solid #E2E8F0;color:#1E40AF;'>{a2_cell}</td>"
+                f"<td style='padding:6px 8px;border:1px solid #E2E8F0;color:#065F46;'>{gp_text}</td>"
+                f"</tr>"
+            )
+            row_idx += 1
+
+        compare_html += "</tbody></table>"
+        st.markdown(compare_html, unsafe_allow_html=True)
+
+        aligned = sum(1 for gp in _gp_data
+                      for key in a2_lookup if gp.get("technology","").lower() in key or key in gp.get("technology","").lower())
+        st.caption(f"📊 {len(_gp_data)} Guiding Principles · {len(a2_lookup)} Agent 2 recommendations · {aligned} cross-referenced")
+
     st.session_state.a2_status = "done"
     if st.session_state.last_refresh is None:
         st.session_state.last_refresh = now
