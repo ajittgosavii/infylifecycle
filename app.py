@@ -198,6 +198,30 @@ refresh_agent = RefreshAgent()
 VersionGuardianAgent.init_session()
 PolicyAnalysisAgent.init_session()
 
+# ── Restore Strategist survey data from SQLite if session is fresh ────────
+_strategist_keys = [
+    "a5_status", "a5_landscape_selected", "a5_db_landscape_selected",
+    "a5_context", "a5_principles_table_data", "a5_costed_data",
+    "a5_custom_cloud_profiles",
+]
+if st.session_state.get("a5_status") == "idle":
+    saved_a5 = load_app_state("strategist_survey")
+    if saved_a5 and isinstance(saved_a5, dict):
+        for k in _strategist_keys:
+            if k in saved_a5 and saved_a5[k]:
+                st.session_state[k] = saved_a5[k]
+
+
+def _save_strategist_state():
+    """Persist all Strategist survey data to SQLite."""
+    data = {}
+    for k in _strategist_keys:
+        val = st.session_state.get(k)
+        if val is not None:
+            data[k] = val
+    if data:
+        save_app_state("strategist_survey", data)
+
 # ── Compute risk scores on every load ─────────────────────────────────────
 if "Risk Score" not in st.session_state.os_df.columns:
     st.session_state.os_df = add_risk_scores(st.session_state.os_df, "OS")
@@ -2881,6 +2905,12 @@ if _show_strategist:
 
 
 
+
+# ── Persist Strategist survey data on every render ────────────────────────────
+try:
+    _save_strategist_state()
+except Exception:
+    pass
 
 # ── Downloads ──────────────────────────────────────────────────────────────────
 st.divider()
