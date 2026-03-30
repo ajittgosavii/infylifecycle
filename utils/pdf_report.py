@@ -8,6 +8,22 @@ from datetime import datetime
 import pandas as pd
 
 
+def _safe(text):
+    """Sanitize text for fpdf — replace Unicode chars that Helvetica can't render."""
+    if not isinstance(text, str):
+        text = str(text) if text is not None else ""
+    return (text.replace("→", "->").replace("←", "<-").replace("↑", "^").replace("↓", "v")
+                .replace("·", "-").replace("—", "-").replace("–", "-")
+                .replace("✅", "[OK]").replace("❌", "[X]").replace("⚠️", "[!]")
+                .replace("🔴", "*").replace("🟠", "*").replace("🟡", "*").replace("🟢", "*")
+                .replace("📋", "").replace("🧠", "").replace("💰", "").replace("📊", "")
+                .replace("🖥️", "").replace("🗄️", "").replace("📦", "").replace("🌐", "")
+                .replace("⚙️", "").replace("☁️", "").replace("🔁", "").replace("⬆️", "")
+                .replace("\u2019", "'").replace("\u2018", "'")
+                .replace("\u201c", '"').replace("\u201d", '"')
+                .encode("latin-1", errors="replace").decode("latin-1"))
+
+
 def generate_pdf_report(os_df: pd.DataFrame, db_df: pd.DataFrame,
                         principles: list = None,
                         costs: dict = None,
@@ -86,7 +102,7 @@ def generate_pdf_report(os_df: pd.DataFrame, db_df: pd.DataFrame,
     pdf.set_font("Helvetica", "I", 9)
     pdf.set_text_color(110, 231, 183)
     pdf.cell(0, 6, "Infosys Enterprise Architecture | Powered by AI (OpenAI GPT)", align="C", new_x="LMARGIN", new_y="NEXT")
-    pdf.cell(0, 6, "5 AI Agents: Sentinel · Advisor · Watchdog · Guardian · Strategist", align="C", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 6, "5 AI Agents: Sentinel - Advisor - Watchdog - Guardian - Strategist", align="C", new_x="LMARGIN", new_y="NEXT")
     pdf.cell(0, 6, "CONFIDENTIAL", align="C", new_x="LMARGIN", new_y="NEXT")
 
     # ── PAGE 2: EXECUTIVE SUMMARY ────────────────────────────────────────────
@@ -170,7 +186,7 @@ def generate_pdf_report(os_df: pd.DataFrame, db_df: pd.DataFrame,
             vals = [item["name"], item["type"], item["risk"], str(item["score"]),
                     days_str, item["rec"], item["final"]]
             for w, v in zip(col_widths, vals):
-                pdf.cell(w, 5, v, border=1, fill=True)
+                pdf.cell(w, 5, _safe(v), border=1, fill=True)
             pdf.ln()
     else:
         pdf.cell(0, 6, "No critical or high risk items found.", new_x="LMARGIN", new_y="NEXT")
@@ -186,11 +202,11 @@ def generate_pdf_report(os_df: pd.DataFrame, db_df: pd.DataFrame,
         for gp in principles[:12]:
             pdf.set_font("Helvetica", "B", 9)
             cat = gp.get("category", "")
-            pdf.cell(0, 5, f"{gp.get('code','')}: {gp.get('title','')}  [{cat}]", new_x="LMARGIN", new_y="NEXT")
+            pdf.cell(0, 5, _safe(f"{gp.get('code','')}: {gp.get('title','')}  [{cat}]"), new_x="LMARGIN", new_y="NEXT")
             pdf.set_font("Helvetica", "", 8)
-            pdf.multi_cell(0, 4, f"  Rule: {gp.get('rule','')}")
+            pdf.multi_cell(0, 4, _safe(f"  Rule: {gp.get('rule','')}"))
             pdf.set_font("Helvetica", "I", 7)
-            pdf.multi_cell(0, 3, f"  Trigger: {gp.get('trigger','')}")
+            pdf.multi_cell(0, 3, _safe(f"  Trigger: {gp.get('trigger','')}"))
             pdf.ln(2)
 
     # ── PAGE 5: TECHNOLOGY DISPOSITION ────────────────────────────────────────
@@ -215,7 +231,7 @@ def generate_pdf_report(os_df: pd.DataFrame, db_df: pd.DataFrame,
                     row.get("upgrade_principle","")[:50],
                     row.get("replacement_principle","")[:58]]
             for w, v in zip(col_widths, vals):
-                pdf.cell(w, 5, v, border=1, fill=True)
+                pdf.cell(w, 5, _safe(v), border=1, fill=True)
             pdf.ln()
 
     # ── PAGE 6: COST ANALYSIS ────────────────────────────────────────────────
@@ -240,7 +256,7 @@ def generate_pdf_report(os_df: pd.DataFrame, db_df: pd.DataFrame,
                     row.get("cost_do_nothing","")[:28], row.get("cost_unit","")[:8],
                     row.get("cost_source","")[:10]]
             for w, v in zip(col_widths, vals):
-                pdf.cell(w, 5, v, border=1, fill=True)
+                pdf.cell(w, 5, _safe(v), border=1, fill=True)
             pdf.ln()
 
     # ── PAGE 7: VENDOR COST INTELLIGENCE ─────────────────────────────────────
@@ -252,9 +268,9 @@ def generate_pdf_report(os_df: pd.DataFrame, db_df: pd.DataFrame,
         pdf.ln(3)
         for vendor, summary in costs.items():
             pdf.set_font("Helvetica", "B", 9)
-            pdf.cell(0, 5, f"{vendor}:", new_x="LMARGIN", new_y="NEXT")
+            pdf.cell(0, 5, _safe(f"{vendor}:"), new_x="LMARGIN", new_y="NEXT")
             pdf.set_font("Helvetica", "", 8)
-            pdf.multi_cell(0, 4, f"  {str(summary)[:200]}")
+            pdf.multi_cell(0, 4, _safe(f"  {str(summary)[:200]}"))
             pdf.ln(2)
 
     # ── LAST PAGE: DISCLAIMER ────────────────────────────────────────────────
@@ -273,7 +289,7 @@ def generate_pdf_report(os_df: pd.DataFrame, db_df: pd.DataFrame,
         f"Portfolio size: {total_os} OS + {total_db} DB = {total_os+total_db} technologies tracked",
     ]
     for d in disclaimers:
-        pdf.cell(0, 5, f"  • {d}", new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(0, 5, _safe(f"  - {d}"), new_x="LMARGIN", new_y="NEXT")
 
     buf = io.BytesIO()
     pdf.output(buf)
