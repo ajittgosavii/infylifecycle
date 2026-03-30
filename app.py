@@ -420,6 +420,39 @@ with st.sidebar:
     </style>
     """, unsafe_allow_html=True)
 
+    # ── AI Advisor button (always visible at top of sidebar) ─────────────────
+    _sb_chat_open = st.session_state.get("show_chat", False)
+    _sb_a5s = st.session_state.get("a5_status", "idle")
+    if _sb_chat_open:
+        if st.button("✕ Close AI Chat", key="close_chat_sb", use_container_width=True):
+            st.session_state["show_chat"] = False
+            st.rerun()
+    else:
+        if st.button("🧠 Open AI Advisor", key="open_chat_sb",
+                     use_container_width=True, type="primary"):
+            st.session_state["show_chat"] = True
+            if st.session_state.get("a5_status") in ("idle",):
+                st.session_state["a5_status"] = "survey"
+            st.rerun()
+    if _sb_a5s not in ("idle",):
+        if st.button("🔄 Start Fresh", key="reset_btn_sb", use_container_width=True):
+            for _k in ["a5_status", "a5_landscape_selected", "a5_db_landscape_selected",
+                        "a5_context", "a5_principles_table_data", "a5_costed_data",
+                        "a5_custom_cloud_profiles", "a5_principles", "a5_costs",
+                        "a5_preflight_done", "a5_os_done", "a5_db_done",
+                        "a5_ws_done", "a5_as_done", "a5_fw_done",
+                        "a5_session_id", "a5_opening_pending", "a5_log",
+                        "show_chat", "show_strategist"]:
+                st.session_state.pop(_k, None)
+            st.session_state["a5_status"] = "idle"
+            st.session_state["show_chat"] = False
+            try:
+                save_app_state("strategist_survey", {})
+            except Exception:
+                pass
+            st.rerun()
+    st.divider()
+
     # ── API Key (compact) ─────────────────────────────────────────────────────
     with st.expander("🔑 API Key", expanded=False):
         api_key = st.text_input("OpenAI API key", type="password", placeholder="sk-...",
@@ -1085,37 +1118,33 @@ if _cur_page == "Discovery":
             </div>
             """, unsafe_allow_html=True)
 
-    # ── AI Advisor button in sidebar (always accessible) ────────────────────
-    with st.sidebar:
-        st.divider()
-        if _chat_open:
-            if st.button("✕ Close AI Chat", key="close_chat_sb", use_container_width=True):
-                st.session_state["show_chat"] = False
-                st.rerun()
-        else:
-            if st.button("🧠 Open AI Advisor", key="open_chat_sb",
-                         use_container_width=True, type="primary"):
-                st.session_state["show_chat"] = True
-                if st.session_state.get("a5_status") in ("idle",):
-                    st.session_state["a5_status"] = "survey"
-                st.rerun()
-        if a5s not in ("idle",):
-            if st.button("🔄 Start Fresh", key="reset_btn_sb", use_container_width=True):
-                for _k in ["a5_status", "a5_landscape_selected", "a5_db_landscape_selected",
-                            "a5_context", "a5_principles_table_data", "a5_costed_data",
-                            "a5_custom_cloud_profiles", "a5_principles", "a5_costs",
-                            "a5_preflight_done", "a5_os_done", "a5_db_done",
-                            "a5_ws_done", "a5_as_done", "a5_fw_done",
-                            "a5_session_id", "a5_opening_pending", "a5_log",
-                            "show_chat", "show_strategist"]:
-                    st.session_state.pop(_k, None)
-                st.session_state["a5_status"] = "idle"
-                st.session_state["show_chat"] = False
-                try:
-                    save_app_state("strategist_survey", {})
-                except Exception:
-                    pass
-                st.rerun()
+    # ── Flashing indicator bottom-right (visual, points to sidebar) ─────────
+    if not _chat_open:
+        st.markdown("""
+        <style>
+        .ai-float-badge {
+            position: fixed; bottom: 24px; right: 24px; z-index: 9999;
+            background: linear-gradient(135deg,#7C3AED,#9333EA);
+            color: white; border-radius: 50px; padding: 12px 20px;
+            font-size: 0.85rem; font-weight: 700;
+            display: flex; align-items: center; gap: 8px;
+            box-shadow: 0 4px 20px rgba(124,58,237,0.5);
+            animation: ai-pulse 2s ease-in-out infinite;
+            cursor: default;
+        }
+        @keyframes ai-pulse {
+            0%, 100% { box-shadow: 0 4px 20px rgba(124,58,237,0.5); transform: scale(1); }
+            50% { box-shadow: 0 4px 30px rgba(124,58,237,0.9), 0 0 50px rgba(124,58,237,0.2); transform: scale(1.03); }
+        }
+        .ai-dot { width: 10px; height: 10px; border-radius: 50%;
+                   background: #34D399; animation: ai-dot-blink 1s infinite; }
+        @keyframes ai-dot-blink { 0%,100%{opacity:1;} 50%{opacity:0.2;} }
+        </style>
+        <div class="ai-float-badge">
+            <div class="ai-dot"></div>
+            🧠 AI Advisor ← Sidebar
+        </div>
+        """, unsafe_allow_html=True)
 
     if not _chat_open:
         _show_strategist = False
