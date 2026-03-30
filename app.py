@@ -1203,18 +1203,20 @@ elif _cur_page != "Discovery":
     </div>
     """, unsafe_allow_html=True)
 
-# When NOT on Version Lifecycle, we still need tab variables for the existing code.
-# Create hidden tabs so the `with tab_dash:` blocks don't error.
-if _cur_page != "Version Lifecycle":
-    tab_dash, tab_os, tab_db, tab_wsas, tab_fw = st.tabs([
-        "📊 Dashboard", "🖥️ OS Versions", "🗄️ DB Versions",
-        "🌐 Web & App Servers", "📦 Frameworks",
-    ])
-    # Hide the lifecycle tabs but NOT the survey category tabs
-    # The lifecycle tabs render AFTER the Discovery content, so they're the last .stTabs
+# Lifecycle tabs: only fully render on Version Lifecycle page.
+# On other pages, create tabs in a hidden container.
+_on_lifecycle = (_cur_page == "Version Lifecycle")
+if not _on_lifecycle:
+    _lc_hide = st.container()
+    with _lc_hide:
+        tab_dash, tab_os, tab_db, tab_wsas, tab_fw = st.tabs([
+            "📊 Dashboard", "🖥️ OS Versions", "🗄️ DB Versions",
+            "🌐 Web & App Servers", "📦 Frameworks",
+        ])
+    # CSS: hide everything inside this container
     st.markdown("""<style>
-    /* Hide lifecycle Dashboard/OS/DB tabs when not on Version Lifecycle page */
-    .main .stTabs:last-of-type { display: none !important; }
+    /* Hide the last stTabs block and all its content */
+    section.main > div > div > div > div:last-child .stTabs { display: none !important; }
     </style>""", unsafe_allow_html=True)
 
 
