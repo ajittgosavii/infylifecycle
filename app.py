@@ -1024,9 +1024,39 @@ if _cur_page == "Discovery":
 
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
-    st.divider()
+    # ── Step-by-step guide banner ────────────────────────────────────────────
+    _guide_messages = {
+        "idle":             ("1", "Open AI Advisor", "Click <b>'Open AI Advisor'</b> in the sidebar to begin the Discovery questionnaire.", "#3B82F6", "👆"),
+        "survey":           ("2", "Complete Survey", "Fill in all 4 category tabs (Cloud, Upgrade, Replacement, Principles) then click <b>'Confirm All Categories'</b>.", "#7C3AED", "📝"),
+        "principles_table": ("3", "Review Principles", "Review the generated Guiding Principles, costs, and wave plan. Then click <b>'Proceed to Policy Chat'</b>.", "#059669", "📋"),
+        "chatting":         ("4", "Policy Chat", "Answer Agent 5's questions about compliance, budgets, and risk tolerance. After 4+ exchanges, click <b>'Proceed to Guiding Principles'</b>.", "#D97706", "💬"),
+        "principles":       ("5", "Generating GP", "Agent 5 is synthesising your answers into Guiding Principles. Please wait...", "#6366F1", "⚙️"),
+        "costing":          ("5", "Cost Intel", "Agent 5 is fetching live vendor pricing. Please wait...", "#6366F1", "⚙️"),
+        "ready":            ("6", "Ready to Analyse", "Review the principles and costs, then click <b>'Generate Final Recommendations'</b>.", "#DC2626", "🚀"),
+        "analysing":        ("6", "Analysing", "Agent 5 is generating Final Recommendations across all categories. Please wait...", "#6366F1", "⚙️"),
+        "done":             ("7", "Complete!", "Final Recommendations added to all tabs. <b>Download Excel/PDF</b> below.", "#059669", "✅"),
+    }
+    _gm = _guide_messages.get(a5s, _guide_messages["idle"])
+    _step_num, _step_title, _step_msg, _step_color, _step_icon = _gm
 
-    # ── Guiding Principles — 5 Category Cards ────────────────────────────────
+    st.markdown(f"""
+    <div style="display:flex;align-items:center;gap:14px;
+                background:linear-gradient(135deg,{_step_color}15,{_step_color}08);
+                border:1px solid {_step_color}40;border-left:4px solid {_step_color};
+                border-radius:0 10px 10px 0;padding:0.8rem 1.2rem;margin:0.5rem 0 1rem;">
+      <div style="font-size:1.8rem;">{_step_icon}</div>
+      <div>
+        <div style="font-size:0.7rem;color:{_step_color};font-weight:700;letter-spacing:1px;text-transform:uppercase;">
+          Step {_step_num} — {_step_title}
+        </div>
+        <div style="font-size:0.88rem;color:#334155;margin-top:2px;">
+          {_step_msg}
+        </div>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── Guiding Principles — 4 Category Cards ────────────────────────────────
     st.markdown("""
     <div style="text-align:center;margin-bottom:1rem;">
         <h2 style="color:#1E293B;margin:0;">Guiding Principles</h2>
@@ -1055,38 +1085,7 @@ if _cur_page == "Discovery":
             </div>
             """, unsafe_allow_html=True)
 
-    # ── Single floating button (bottom-right corner) ────────────────────────
-    # Use a hidden container + CSS to position the real Streamlit button
-    # at the bottom-right as a fixed floating element
-    _float_key = "close_chat_float" if _chat_open else "open_chat_float"
-    _float_label = "✕ Close" if _chat_open else "🧠 AI Advisor"
-    _float_type = "secondary" if _chat_open else "primary"
-
-    # CSS to move the button container to fixed bottom-right
-    st.markdown(f"""
-    <style>
-    #ai-advisor-anchor {{
-        position: fixed; bottom: 24px; right: 24px; z-index: 9999;
-        width: auto;
-    }}
-    #ai-advisor-anchor + div {{
-        position: fixed !important; bottom: 24px; right: 24px; z-index: 9999;
-    }}
-    /* Hide the button from normal flow — it renders at fixed position */
-    .ai-float-wrapper {{
-        position: fixed; bottom: 24px; right: 24px; z-index: 9999;
-    }}
-    </style>
-    <div id="ai-advisor-anchor"></div>
-    """, unsafe_allow_html=True)
-
-    # The button itself — Streamlit renders it in normal flow but we'll
-    # use a workaround: render in sidebar-like container at page end
-    # Since CSS fixed positioning on Streamlit containers is unreliable,
-    # we put the button in the SIDEBAR instead (always visible, always works)
-
-    # Actually — simplest reliable approach: put the button in the sidebar
-    # at the very bottom, where it's always accessible
+    # ── AI Advisor button in sidebar (always accessible) ────────────────────
     with st.sidebar:
         st.divider()
         if _chat_open:
