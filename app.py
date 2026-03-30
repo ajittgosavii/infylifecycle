@@ -1396,55 +1396,71 @@ elif _cur_page == "Future Blueprint":
         with m3: st.metric("⬆️ Upgrade", _upgrade_count)
         with m4: st.metric("✅ Retain", _retain_count)
 
-        # ── Sankey Diagram: Current → Action → Target Cloud ──────────────────
+        # ── Action Breakdown by Category (stacked bar) ────────────────────────
         st.divider()
-        st.markdown("##### 🔀 Migration Flow (Sankey Diagram)")
+        st.markdown("##### 📊 Migration Actions by Category")
 
-        # Build Sankey nodes and links
-        _categories = list(set(t["Category"] for t in _transitions))
-        _actions = ["REPLACE", "UPGRADE", "RETAIN"]
-        _clouds = list(set(t["Cloud"] for t in _transitions if t["Cloud"]))
+        _categories = sorted(set(t["Category"] for t in _transitions))
+        _action_colors = {"REPLACE": "#DC2626", "UPGRADE": "#F59E0B", "RETAIN": "#10B981"}
 
-        _nodes = _categories + _actions + _clouds
-        _node_colors = (
-            ["#3B82F6"] * len(_categories) +
-            ["#DC2626", "#F59E0B", "#10B981"] +
-            ["#6366F1"] * len(_clouds)
+        bar_fig = go.Figure()
+        for action, color in _action_colors.items():
+            counts = [sum(1 for t in _transitions if t["Category"] == cat and t["Action"] == action)
+                     for cat in _categories]
+            bar_fig.add_trace(go.Bar(
+                y=_categories, x=counts, name=action, orientation="h",
+                marker_color=color,
+                text=counts, textposition="inside",
+            ))
+        bar_fig.update_layout(
+            barmode="stack", height=300,
+            margin=dict(l=10, r=10, t=10, b=10),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5),
+            xaxis_title="Number of Technologies",
         )
+        st.plotly_chart(bar_fig, use_container_width=True)
 
-        _links_source = []
-        _links_target = []
-        _links_value = []
-        _links_color = []
+        # ── Treemap: Target State ────────────────────────────────────────────
+        st.divider()
+        st.markdown("##### 🗺️ Target State Treemap")
 
-        # Category → Action
+        _tree_labels = []
+        _tree_parents = []
+        _tree_values = []
+        _tree_colors = []
+
+        # Root
+        _tree_labels.append("Target State")
+        _tree_parents.append("")
+        _tree_values.append(0)
+        _tree_colors.append("#1E293B")
+
+        # Category level
         for cat in _categories:
-            for action in _actions:
-                count = sum(1 for t in _transitions if t["Category"] == cat and t["Action"] == action)
-                if count > 0:
-                    _links_source.append(_nodes.index(cat))
-                    _links_target.append(_nodes.index(action))
-                    _links_value.append(count)
-                    _links_color.append({"REPLACE":"rgba(220,38,38,0.3)","UPGRADE":"rgba(245,158,11,0.3)",
-                                         "RETAIN":"rgba(16,185,129,0.3)"}.get(action, "rgba(100,100,100,0.2)"))
+            _tree_labels.append(cat)
+            _tree_parents.append("Target State")
+            _tree_values.append(0)
+            _tree_colors.append({"OS":"#3B82F6","Database":"#8B5CF6","Web Server":"#10B981",
+                                "App Server":"#F59E0B","Framework":"#EF4444"}.get(cat, "#64748B"))
 
-        # Action → Cloud
-        for action in _actions:
-            for cloud in _clouds:
-                count = sum(1 for t in _transitions if t["Action"] == action and t["Cloud"] == cloud)
-                if count > 0:
-                    _links_source.append(_nodes.index(action))
-                    _links_target.append(_nodes.index(cloud))
-                    _links_value.append(count)
-                    _links_color.append("rgba(99,102,241,0.3)")
+        # Technology level
+        for t in _transitions:
+            action_icon = {"REPLACE":"🔁","UPGRADE":"⬆️","RETAIN":"✅"}.get(t["Action"],"")
+            label = f"{action_icon} {t['Current']}"
+            _tree_labels.append(label)
+            _tree_parents.append(t["Category"])
+            _tree_values.append(1)
+            _tree_colors.append(_action_colors.get(t["Action"], "#64748B"))
 
-        sankey_fig = go.Figure(go.Sankey(
-            node=dict(pad=15, thickness=20, label=_nodes, color=_node_colors),
-            link=dict(source=_links_source, target=_links_target,
-                     value=_links_value, color=_links_color)
+        tree_fig = go.Figure(go.Treemap(
+            labels=_tree_labels, parents=_tree_parents, values=_tree_values,
+            marker_colors=_tree_colors,
+            textinfo="label",
+            hovertemplate="<b>%{label}</b><br>Parent: %{parent}<extra></extra>",
+            branchvalues="total",
         ))
-        sankey_fig.update_layout(height=400, margin=dict(l=10, r=10, t=10, b=10))
-        st.plotly_chart(sankey_fig, use_container_width=True)
+        tree_fig.update_layout(height=500, margin=dict(l=5, r=5, t=5, b=5))
+        st.plotly_chart(tree_fig, use_container_width=True)
 
         # ── Target State Table ───────────────────────────────────────────────
         st.divider()
