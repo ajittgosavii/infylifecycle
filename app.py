@@ -1337,11 +1337,12 @@ elif _cur_page == "History":
 
 elif _cur_page in ("Disposition", "Wave Planning", "Business Case", "Workload Optimization"):
     # These pages show Agent 5 output when available, otherwise prompt to complete Discovery
-    _a5done = st.session_state.get("a5_status") in ("principles_table", "chatting", "principles",
-                                                      "costing", "ready", "analysing", "done")
+    _a5_final = st.session_state.get("a5_status") == "done"
     _gp_data = st.session_state.get("a5_principles_table_data")
+    _gp_chat = st.session_state.get("a5_principles", [])  # detailed GP from chat
+    _has_data = bool(_gp_data)
 
-    if not _a5done or not _gp_data:
+    if not _has_data:
         st.markdown(f"""
         <div style="text-align:center;padding:3rem 2rem;">
             <div style="font-size:2.5rem;margin-bottom:1rem;">📋</div>
@@ -1356,25 +1357,59 @@ elif _cur_page in ("Disposition", "Wave Planning", "Business Case", "Workload Op
         from agents.agent_analysis import assign_migration_waves, get_cost_estimates
         from agents.agent_analysis import generate_dependency_map, generate_compliance_crosswalk
 
+        # Data source indicator
+        if _a5_final:
+            st.success("Based on **Final Agent 5 Recommendations** — consolidation of all Discovery phases, Policy Chat, and AI analysis.")
+        else:
+            st.info("Based on **preliminary survey data**. Complete all Discovery steps for final consolidated recommendations.")
+
         if _cur_page == "Disposition":
             st.subheader("📋 Disposition — Guiding Principles & Compliance")
-            st.caption("Generated from your Discovery survey selections")
 
-            # Show GP table
-            if _gp_data:
-                cat_colors = {"OS": "#1E3A8A", "Database": "#7C2D12", "Web Server": "#065F46",
-                              "App Server": "#4338CA", "Framework": "#831843"}
-                for row in _gp_data:
-                    cat = row.get("category", "OS")
-                    color = cat_colors.get(cat, "#374151")
-                    tech = row.get("technology", row.get("os_family", ""))
+            # Show detailed GP from chat if available (final), else preliminary
+            if _a5_final and _gp_chat:
+                st.markdown("##### ⚖️ Final Guiding Principles (from Policy Chat)")
+                for gp in _gp_chat:
+                    cat_colors = {"Risk":"#EF4444","Budget":"#F59E0B","OS":"#3B82F6",
+                                  "Database":"#8B5CF6","Execution":"#10B981"}
+                    color = cat_colors.get(gp.get("category",""), "#6B7280")
                     st.markdown(
-                        f"<div style='border-left:3px solid {color};padding:6px 12px;"
-                        f"margin-bottom:6px;background:#F8FAFC;border-radius:0 6px 6px 0;'>"
-                        f"<strong>{cat}</strong> · {tech} · "
-                        f"<span style='color:#166534;'>Upgrade: {row.get('upgrade_principle','')}</span> · "
-                        f"<span style='color:#7C2D12;'>Replace: {row.get('replacement_principle','')}</span>"
+                        f"<div style='border-left:3px solid {color};padding:8px 12px;"
+                        f"border-radius:0 6px 6px 0;background:#F8FAFC;margin-bottom:6px;'>"
+                        f"<strong>{gp.get('code','')}: {gp.get('title','')}</strong><br>"
+                        f"<span style='font-size:0.85rem;'>{gp.get('rule','')}</span><br>"
+                        f"<small style='color:#6B7280;'>Trigger: {gp.get('trigger','')}</small>"
                         f"</div>", unsafe_allow_html=True)
+                st.divider()
+
+            # Show GP table (preliminary principles)
+            st.markdown("##### 📋 Technology Disposition Table")
+            cat_colors = {"OS": "#1E3A8A", "Database": "#7C2D12", "Web Server": "#065F46",
+                          "App Server": "#4338CA", "Framework": "#831843"}
+            for row in _gp_data:
+                cat = row.get("category", "OS")
+                color = cat_colors.get(cat, "#374151")
+                tech = row.get("technology", row.get("os_family", ""))
+                st.markdown(
+                    f"<div style='border-left:3px solid {color};padding:6px 12px;"
+                    f"margin-bottom:4px;background:#F8FAFC;border-radius:0 6px 6px 0;font-size:0.88rem;'>"
+                    f"<strong>{cat}</strong> · {tech} · "
+                    f"<span style='color:#166534;'>Upgrade: {row.get('upgrade_principle','')}</span> · "
+                    f"<span style='color:#7C2D12;'>Replace: {row.get('replacement_principle','')}</span>"
+                    f"</div>", unsafe_allow_html=True)
+
+            # Final Verdict summary if available
+            if _a5_final and "Final Verdict" in st.session_state.os_df.columns:
+                st.divider()
+                st.markdown("##### 📊 Final Verdict Summary")
+                os_df_v = st.session_state.os_df
+                db_df_v = st.session_state.db_df
+                verdicts = ["CRITICAL","UPGRADE NOW","EXTEND + PLAN","REPLACE","CLOUD MIGRATE","MONITOR"]
+                vcols = st.columns(6)
+                for i, v in enumerate(verdicts):
+                    os_c = int((os_df_v.get("Final Verdict", pd.Series(dtype=str)).str.upper().str.startswith(v.split()[0])).sum())
+                    db_c = int((db_df_v.get("Final Verdict", pd.Series(dtype=str)).str.upper().str.startswith(v.split()[0])).sum()) if "Final Verdict" in db_df_v.columns else 0
+                    with vcols[i]: st.metric(v, os_c+db_c)
 
             # Compliance crosswalk
             st.divider()
@@ -1393,10 +1428,20 @@ elif _cur_page in ("Disposition", "Wave Planning", "Business Case", "Workload Op
 
         elif _cur_page == "Wave Planning":
             st.subheader("🌊 Wave Planning — Migration Waves")
+            if _a5_final:
+                st.caption("Based on final Agent 5 analysis — risk scores, EOL dates, and compliance requirements")
             wave_data = assign_migration_waves(
                 _gp_data, os_df=st.session_state.os_df, db_df=st.session_state.db_df,
                 ws_df=st.session_state.ws_df, as_df=st.session_state.as_df,
                 fw_df=st.session_state.fw_df)
+
+            # Summary metrics
+            wm1, wm2, wm3, wm4 = st.columns(4)
+            with wm1: st.metric("🔴 Critical", sum(1 for r in wave_data if r.get("wave")==1))
+            with wm2: st.metric("🟠 High", sum(1 for r in wave_data if r.get("wave")==2))
+            with wm3: st.metric("🟡 Plan", sum(1 for r in wave_data if r.get("wave")==3))
+            with wm4: st.metric("🟢 Monitor", sum(1 for r in wave_data if r.get("wave")==4))
+
             wave_colors = {1: ("#DC2626","#FEE2E2","🔴"), 2: ("#EA580C","#FFEDD5","🟠"),
                           3: ("#CA8A04","#FEF9C3","🟡"), 4: ("#16A34A","#DCFCE7","🟢")}
             for w in [1, 2, 3, 4]:
@@ -1410,6 +1455,17 @@ elif _cur_page in ("Disposition", "Wave Planning", "Business Case", "Workload Op
                     f" · {items[0].get('timeline','')}<br>"
                     + " · ".join(f"<b>{r.get('technology','')}</b> ({r.get('category','')})" for r in items)
                     + "</div>", unsafe_allow_html=True)
+
+            # Full wave table
+            st.divider()
+            wave_df = pd.DataFrame([{
+                "Wave": r.get("wave_name",""), "Technology": r.get("technology",""),
+                "Category": r.get("category",""), "Urgency": r.get("urgency",""),
+                "Timeline": r.get("timeline",""), "Risk Score": r.get("risk_score",""),
+                "Days to EOL": r.get("days_eol","")
+            } for r in wave_data])
+            st.dataframe(wave_df, use_container_width=True, hide_index=True)
+
             # Dependencies
             st.divider()
             st.subheader("🔗 Dependency Mapping")
@@ -1423,30 +1479,46 @@ elif _cur_page in ("Disposition", "Wave Planning", "Business Case", "Workload Op
 
         elif _cur_page == "Business Case":
             st.subheader("💼 Business Case — Cost Analysis")
+            if _a5_final:
+                st.caption("Consolidation of all cost intelligence from the Discovery process")
+
+            # Show cost data
             costed = st.session_state.get("a5_costed_data")
             if costed:
                 cost_df = pd.DataFrame([{
                     "Technology": r.get("technology", ""),
                     "Category": r.get("category", ""),
-                    "Upgrade Cost": r.get("cost_upgrade", ""),
-                    "Replace Cost": r.get("cost_replace", ""),
-                    "Do Nothing (Annual)": r.get("cost_do_nothing", ""),
+                    "💚 Upgrade Cost": r.get("cost_upgrade", ""),
+                    "🔵 Replace Cost": r.get("cost_replace", ""),
+                    "🔴 Do Nothing (Annual)": r.get("cost_do_nothing", ""),
+                    "Unit": r.get("cost_unit", ""),
+                    "Source": r.get("cost_source", ""),
                 } for r in costed])
                 st.dataframe(cost_df, use_container_width=True, hide_index=True)
             else:
                 st.info("Cost data will be available after completing the Discovery survey.")
 
+            # Show live vendor costs from Agent 5 if available
+            _a5_costs = st.session_state.get("a5_costs", {})
+            if _a5_costs:
+                st.divider()
+                st.subheader("💰 Live Vendor Cost Intelligence")
+                st.caption("Researched by Agent 5 during the Policy Chat phase")
+                for vendor, summary in _a5_costs.items():
+                    st.markdown(f"**{vendor}:** {summary}")
+
         elif _cur_page == "Workload Optimization":
-            st.subheader("🔧 Workload Optimization — Technology Utilization")
-            st.caption("Technologies from your landscape with risk and EOL analysis")
+            st.subheader("🔧 Workload Optimization — Technology Landscape")
+            if _a5_final:
+                st.caption("Final landscape analysis with Agent 5 recommendations applied")
             _all_items = []
             for r in _gp_data:
                 _all_items.append({
                     "Technology": r.get("technology", ""),
                     "Category": r.get("category", ""),
                     "Cloud Target": r.get("cloud_target", ""),
-                    "Upgrade": r.get("upgrade_principle", ""),
-                    "Replace": r.get("replacement_principle", ""),
+                    "Upgrade Path": r.get("upgrade_principle", ""),
+                    "Replacement Path": r.get("replacement_principle", ""),
                 })
             if _all_items:
                 st.dataframe(pd.DataFrame(_all_items), use_container_width=True, hide_index=True)
