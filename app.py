@@ -310,6 +310,12 @@ if st.session_state.get("a5_status") == "idle":
         for k in _strategist_keys:
             if k in saved_a5 and saved_a5[k]:
                 st.session_state[k] = saved_a5[k]
+        # Safety: if restored status is beyond survey but no landscape was selected,
+        # reset to survey so user must fill in the forms first
+        _restored_status = st.session_state.get("a5_status", "idle")
+        _has_landscape = bool(st.session_state.get("a5_landscape_selected"))
+        if _restored_status not in ("idle", "survey") and not _has_landscape:
+            st.session_state["a5_status"] = "idle"
 
 
 def _save_strategist_state():
