@@ -374,12 +374,8 @@ _NAV_PAGES = {
         ("Future Blueprint",       "📐", True),
         ("Workload Optimization",  "🔧", True),
         ("Business Case",          "💼", True),
-        ("Server Affinity",        "🖧", True),
-        ("Code Analysis",          "💻", True),
-        ("Multi-Cloud Strategy",   "☁️", True),
         ("Version Lifecycle",      "⏱️", True),
         ("Wave Planning",          "🌊", True),
-        ("AI Copilot — Assess",    "🤖", True),
     ],
     "DAY 1 — MIGRATE": [
         ("AI Migration Hub",       "🚀", True),
