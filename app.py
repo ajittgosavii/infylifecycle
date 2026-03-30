@@ -1335,6 +1335,122 @@ elif _cur_page == "History":
 
         st.caption("Note: Exports are generated on-demand. This log tracks when they were created.")
 
+elif _cur_page in ("Disposition", "Wave Planning", "Business Case", "Workload Optimization"):
+    # These pages show Agent 5 output when available, otherwise prompt to complete Discovery
+    _a5done = st.session_state.get("a5_status") in ("principles_table", "chatting", "principles",
+                                                      "costing", "ready", "analysing", "done")
+    _gp_data = st.session_state.get("a5_principles_table_data")
+
+    if not _a5done or not _gp_data:
+        st.markdown(f"""
+        <div style="text-align:center;padding:3rem 2rem;">
+            <div style="font-size:2.5rem;margin-bottom:1rem;">📋</div>
+            <h2 style="color:#1E293B;">{_cur_page}</h2>
+            <p style="color:#64748B;font-size:1rem;">
+                Complete the <strong>Discovery</strong> survey first to generate data for this page.
+                Click <strong>Discovery</strong> in the sidebar, then <strong>Open AI Advisor</strong>.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        from agents.agent_analysis import assign_migration_waves, get_cost_estimates
+        from agents.agent_analysis import generate_dependency_map, generate_compliance_crosswalk
+
+        if _cur_page == "Disposition":
+            st.subheader("📋 Disposition — Guiding Principles & Compliance")
+            st.caption("Generated from your Discovery survey selections")
+
+            # Show GP table
+            if _gp_data:
+                cat_colors = {"OS": "#1E3A8A", "Database": "#7C2D12", "Web Server": "#065F46",
+                              "App Server": "#4338CA", "Framework": "#831843"}
+                for row in _gp_data:
+                    cat = row.get("category", "OS")
+                    color = cat_colors.get(cat, "#374151")
+                    tech = row.get("technology", row.get("os_family", ""))
+                    st.markdown(
+                        f"<div style='border-left:3px solid {color};padding:6px 12px;"
+                        f"margin-bottom:6px;background:#F8FAFC;border-radius:0 6px 6px 0;'>"
+                        f"<strong>{cat}</strong> · {tech} · "
+                        f"<span style='color:#166534;'>Upgrade: {row.get('upgrade_principle','')}</span> · "
+                        f"<span style='color:#7C2D12;'>Replace: {row.get('replacement_principle','')}</span>"
+                        f"</div>", unsafe_allow_html=True)
+
+            # Compliance crosswalk
+            st.divider()
+            st.subheader("🛡️ Compliance Crosswalk")
+            wave_data = assign_migration_waves(
+                _gp_data, os_df=st.session_state.os_df, db_df=st.session_state.db_df,
+                ws_df=st.session_state.ws_df, as_df=st.session_state.as_df,
+                fw_df=st.session_state.fw_df)
+            comp_data = generate_compliance_crosswalk(wave_data)
+            violations = [r for r in comp_data if r.get("compliance_status") == "VIOLATION"]
+            warnings = [r for r in comp_data if r.get("compliance_status") == "WARNING"]
+            vc1, vc2, vc3 = st.columns(3)
+            with vc1: st.metric("Violations", len(violations))
+            with vc2: st.metric("At Risk", len(warnings))
+            with vc3: st.metric("Compliant", len(comp_data) - len(violations) - len(warnings))
+
+        elif _cur_page == "Wave Planning":
+            st.subheader("🌊 Wave Planning — Migration Waves")
+            wave_data = assign_migration_waves(
+                _gp_data, os_df=st.session_state.os_df, db_df=st.session_state.db_df,
+                ws_df=st.session_state.ws_df, as_df=st.session_state.as_df,
+                fw_df=st.session_state.fw_df)
+            wave_colors = {1: ("#DC2626","#FEE2E2","🔴"), 2: ("#EA580C","#FFEDD5","🟠"),
+                          3: ("#CA8A04","#FEF9C3","🟡"), 4: ("#16A34A","#DCFCE7","🟢")}
+            for w in [1, 2, 3, 4]:
+                items = [r for r in wave_data if r.get("wave") == w]
+                if not items: continue
+                color, bg, icon = wave_colors[w]
+                st.markdown(
+                    f"<div style='background:{bg};border-left:4px solid {color};border-radius:0 8px 8px 0;"
+                    f"padding:0.6rem 1rem;margin-bottom:0.5rem;'>"
+                    f"<strong style='color:{color};'>{icon} {items[0].get('wave_name','')}</strong>"
+                    f" · {items[0].get('timeline','')}<br>"
+                    + " · ".join(f"<b>{r.get('technology','')}</b> ({r.get('category','')})" for r in items)
+                    + "</div>", unsafe_allow_html=True)
+            # Dependencies
+            st.divider()
+            st.subheader("🔗 Dependency Mapping")
+            deps = generate_dependency_map(_gp_data)
+            if deps:
+                for dep in deps:
+                    st.markdown(f"⚙️ **{dep['source']}** depends on: " +
+                                ", ".join(f"**{d['technology']}**" for d in dep.get("depends_on",[])))
+            else:
+                st.info("No cross-layer dependencies detected.")
+
+        elif _cur_page == "Business Case":
+            st.subheader("💼 Business Case — Cost Analysis")
+            costed = st.session_state.get("a5_costed_data")
+            if costed:
+                cost_df = pd.DataFrame([{
+                    "Technology": r.get("technology", ""),
+                    "Category": r.get("category", ""),
+                    "Upgrade Cost": r.get("cost_upgrade", ""),
+                    "Replace Cost": r.get("cost_replace", ""),
+                    "Do Nothing (Annual)": r.get("cost_do_nothing", ""),
+                } for r in costed])
+                st.dataframe(cost_df, use_container_width=True, hide_index=True)
+            else:
+                st.info("Cost data will be available after completing the Discovery survey.")
+
+        elif _cur_page == "Workload Optimization":
+            st.subheader("🔧 Workload Optimization — Technology Utilization")
+            st.caption("Technologies from your landscape with risk and EOL analysis")
+            _all_items = []
+            for r in _gp_data:
+                _all_items.append({
+                    "Technology": r.get("technology", ""),
+                    "Category": r.get("category", ""),
+                    "Cloud Target": r.get("cloud_target", ""),
+                    "Upgrade": r.get("upgrade_principle", ""),
+                    "Replace": r.get("replacement_principle", ""),
+                })
+            if _all_items:
+                st.dataframe(pd.DataFrame(_all_items), use_container_width=True, hide_index=True)
+
 elif _cur_page != "Discovery":
     # Placeholder pages for other navigation items
     st.markdown(f"""
@@ -3291,8 +3407,12 @@ try:
 except Exception:
     pass
 
-# ── Downloads (only on Version Lifecycle page, not Discovery landing) ─────────
-if st.session_state.get("current_page", "Discovery") != "Discovery":
+# ── Downloads (Version Lifecycle page OR Discovery when Agent 5 is done) ──────
+_show_downloads = (
+    st.session_state.get("current_page", "Discovery") != "Discovery"
+    or st.session_state.get("a5_status") == "done"
+)
+if _show_downloads:
     st.divider()
     dl_col1, dl_col2 = st.columns(2)
     with dl_col1:
