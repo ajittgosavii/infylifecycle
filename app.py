@@ -1203,477 +1203,465 @@ elif _cur_page != "Discovery":
     </div>
     """, unsafe_allow_html=True)
 
-# Lifecycle tabs: only fully render on Version Lifecycle page.
-# On other pages, create tabs in a hidden container.
+# Lifecycle tabs: ONLY render on Version Lifecycle page.
+# On other pages, tab content is completely skipped (no rendering at all).
 _on_lifecycle = (_cur_page == "Version Lifecycle")
-if not _on_lifecycle:
-    _lc_hide = st.container()
-    with _lc_hide:
-        tab_dash, tab_os, tab_db, tab_wsas, tab_fw = st.tabs([
-            "📊 Dashboard", "🖥️ OS Versions", "🗄️ DB Versions",
-            "🌐 Web & App Servers", "📦 Frameworks",
-        ])
-    # CSS: hide everything inside this container
-    st.markdown("""<style>
-    /* Hide the last stTabs block and all its content */
-    section.main > div > div > div > div:last-child .stTabs { display: none !important; }
-    </style>""", unsafe_allow_html=True)
-
 
 # ────────────────── Tab 0: Executive Dashboard ────────────────────────────────
-with tab_dash:
-    st.subheader("📊 Executive Risk Dashboard")
-    st.caption("Real-time risk analysis across your entire OS, DB, Web Server, App Server & Framework portfolio")
+if _on_lifecycle:
+    with tab_dash:
+        st.subheader("📊 Executive Risk Dashboard")
+        st.caption("Real-time risk analysis across your entire OS, DB, Web Server, App Server & Framework portfolio")
 
-    # Top-level KPI metrics
-    os_df_d = st.session_state.os_df
-    db_df_d = st.session_state.db_df
-    risk_summary = get_risk_summary(os_df_d, db_df_d)
-    total_items = len(os_df_d) + len(db_df_d) + len(st.session_state.ws_df) + len(st.session_state.as_df) + len(st.session_state.fw_df)
+        # Top-level KPI metrics
+        os_df_d = st.session_state.os_df
+        db_df_d = st.session_state.db_df
+        risk_summary = get_risk_summary(os_df_d, db_df_d)
+        total_items = len(os_df_d) + len(db_df_d) + len(st.session_state.ws_df) + len(st.session_state.as_df) + len(st.session_state.fw_df)
 
-    k1, k2, k3, k4, k5, k6 = st.columns(6)
-    with k1: st.metric("Total Portfolio", total_items)
-    with k2: st.metric("🔴 Critical", risk_summary["CRITICAL"])
-    with k3: st.metric("🟠 High", risk_summary["HIGH"])
-    with k4: st.metric("🟡 Medium", risk_summary["MEDIUM"])
-    with k5: st.metric("🟢 Low", risk_summary["LOW"])
-    with k6: st.metric("✅ Minimal", risk_summary["MINIMAL"])
+        k1, k2, k3, k4, k5, k6 = st.columns(6)
+        with k1: st.metric("Total Portfolio", total_items)
+        with k2: st.metric("🔴 Critical", risk_summary["CRITICAL"])
+        with k3: st.metric("🟠 High", risk_summary["HIGH"])
+        with k4: st.metric("🟡 Medium", risk_summary["MEDIUM"])
+        with k5: st.metric("🟢 Low", risk_summary["LOW"])
+        with k6: st.metric("✅ Minimal", risk_summary["MINIMAL"])
 
-    st.divider()
+        st.divider()
 
-    # Charts row 1
-    ch1, ch2 = st.columns(2)
-    with ch1:
-        fig_risk = risk_distribution_chart(os_df_d, db_df_d)
-        st.plotly_chart(fig_risk, use_container_width=True)
-    with ch2:
-        fig_bar = status_breakdown_chart(os_df_d, db_df_d)
-        st.plotly_chart(fig_bar, use_container_width=True)
+        # Charts row 1
+        ch1, ch2 = st.columns(2)
+        with ch1:
+            fig_risk = risk_distribution_chart(os_df_d, db_df_d)
+            st.plotly_chart(fig_risk, use_container_width=True)
+        with ch2:
+            fig_bar = status_breakdown_chart(os_df_d, db_df_d)
+            st.plotly_chart(fig_bar, use_container_width=True)
 
-    st.divider()
+        st.divider()
 
-    # EOL Timeline
-    fig_timeline = eol_timeline_chart(os_df_d, db_df_d)
-    st.plotly_chart(fig_timeline, use_container_width=True)
+        # EOL Timeline
+        fig_timeline = eol_timeline_chart(os_df_d, db_df_d)
+        st.plotly_chart(fig_timeline, use_container_width=True)
 
-    st.divider()
+        st.divider()
 
-    # Top urgent items table
-    ch3, ch4 = st.columns([3, 2])
-    with ch3:
-        st.subheader("🚨 Top 10 Most Urgent Items")
-        urgent = top_urgent_items(os_df_d, db_df_d, n=10)
-        if not urgent.empty:
-            st.dataframe(urgent, height=380, hide_index=True, use_container_width=True)
+        # Top urgent items table
+        ch3, ch4 = st.columns([3, 2])
+        with ch3:
+            st.subheader("🚨 Top 10 Most Urgent Items")
+            urgent = top_urgent_items(os_df_d, db_df_d, n=10)
+            if not urgent.empty:
+                st.dataframe(urgent, height=380, hide_index=True, use_container_width=True)
+            else:
+                st.info("Risk scores not yet computed.")
+        with ch4:
+            fig_hist = risk_score_histogram(os_df_d, db_df_d)
+            st.plotly_chart(fig_hist, use_container_width=True)
+
+        # Quick filter: items expiring during project window
+        st.divider()
+        st.subheader("⚠️ Items Expiring During Project Window")
+        from datetime import date as _date
+        proj_end = get_project_end()
+        proj_start = st.session_state.get("project_start", _date(2026, 4, 1))
+        expiring_os = os_df_d[
+            os_df_d["Days Until EOL"].apply(
+                lambda d: d is not None and 0 < d <= (proj_end - _date.today()).days
+            )
+        ] if "Days Until EOL" in os_df_d.columns else pd.DataFrame()
+        expiring_db = db_df_d[
+            db_df_d["Days Until EOL"].apply(
+                lambda d: d is not None and 0 < d <= (proj_end - _date.today()).days
+            )
+        ] if "Days Until EOL" in db_df_d.columns else pd.DataFrame()
+
+        exp_count = len(expiring_os) + len(expiring_db)
+        if exp_count > 0:
+            st.warning(f"**{exp_count} items** have support ending before {proj_end.strftime('%d %b %Y')}")
+            ex1, ex2 = st.columns(2)
+            with ex1:
+                if not expiring_os.empty:
+                    st.caption(f"OS: {len(expiring_os)} items expiring")
+                    show_cols = [c for c in ["OS Version", "Days Until EOL", "Risk Score", "Risk Level", "Recommendation"] if c in expiring_os.columns]
+                    st.dataframe(expiring_os[show_cols].sort_values("Days Until EOL"), hide_index=True, height=250)
+            with ex2:
+                if not expiring_db.empty:
+                    st.caption(f"DB: {len(expiring_db)} items expiring")
+                    show_cols = [c for c in ["Database", "Version", "Days Until EOL", "Risk Score", "Risk Level", "Recommendation"] if c in expiring_db.columns]
+                    st.dataframe(expiring_db[show_cols].sort_values("Days Until EOL"), hide_index=True, height=250)
         else:
-            st.info("Risk scores not yet computed.")
-    with ch4:
-        fig_hist = risk_score_histogram(os_df_d, db_df_d)
-        st.plotly_chart(fig_hist, use_container_width=True)
+            st.success("No items expiring during the project window.")
 
-    # Quick filter: items expiring during project window
-    st.divider()
-    st.subheader("⚠️ Items Expiring During Project Window")
-    from datetime import date as _date
-    proj_end = get_project_end()
-    proj_start = st.session_state.get("project_start", _date(2026, 4, 1))
-    expiring_os = os_df_d[
-        os_df_d["Days Until EOL"].apply(
-            lambda d: d is not None and 0 < d <= (proj_end - _date.today()).days
+
+    # ────────────────── Tab 1: OS Versions ────────────────────────────────────────
+    with tab_os:
+        os_df = st.session_state.os_df
+
+        m1, m2, m3, m4, m5 = st.columns(5)
+
+        def is_eol(row):
+            for col in ["Extended/LTSC Support End", "Mainstream/Full Support End"]:
+                v = str(row.get(col, ""))
+                if any(k in v.lower() for k in ["ended", "end of"]):
+                    return True
+                if len(v) == 10 and v[0].isdigit():
+                    try:
+                        from datetime import datetime as dt
+                        return dt.strptime(v, "%Y-%m-%d") < dt.now()
+                    except Exception:
+                        pass
+            return False
+
+        eol_count  = sum(1 for _, r in os_df.iterrows() if is_eol(r))
+        upg_count  = (os_df.get("Upgrade",  pd.Series(dtype=str)) == "Y").sum()
+        repl_count = (os_df.get("Replace",  pd.Series(dtype=str)) == "Y").sum()
+        rec_count  = (os_df["Recommendation"] != "").sum()
+
+        with m1: st.metric("Total OS Entries",   len(os_df))
+        with m2: st.metric("⚠️ EOL / Expired",   int(eol_count))
+        with m3: st.metric("⬆️ Upgrade Flagged", int(upg_count))
+        with m4: st.metric("🔁 Replace Flagged", int(repl_count))
+        with m5: st.metric("💡 Recommendations", int(rec_count))
+
+        with st.expander("🔍 Filters", expanded=False):
+            fc1, fc2, fc3, fc4 = st.columns(4)
+            with fc1:
+                families = ["All"] + sorted(set(
+                    v.split()[0] for v in os_df["OS Version"].dropna() if v and not v.startswith("[")
+                ))
+                fam_f = st.selectbox("OS Family", families)
+            with fc2: upg_f  = st.selectbox("Upgrade", ["All","Y","N"])
+            with fc3: repl_f = st.selectbox("Replace", ["All","Y","N"])
+            with fc4: rec_f  = st.selectbox("Has Recommendation", ["All","Yes","No"])
+
+        view = os_df.copy()
+        # Global search filter
+        gs = st.session_state.get("global_search", "").strip()
+        if gs:
+            view = view[view.apply(lambda r: gs.lower() in " ".join(str(v) for v in r.values).lower(), axis=1)]
+        if fam_f  != "All": view = view[view["OS Version"].str.startswith(fam_f, na=False)]
+        if upg_f  != "All": view = view[view.get("Upgrade", pd.Series(dtype=str)) == upg_f]
+        if repl_f != "All": view = view[view.get("Replace", pd.Series(dtype=str)) == repl_f]
+        if rec_f  == "Yes": view = view[view["Recommendation"] != ""]
+        if rec_f  == "No":  view = view[view["Recommendation"] == ""]
+
+        disp = {
+            "OS Version":                    st.column_config.TextColumn("OS Version",        width=220),
+            "Availability Date":             st.column_config.TextColumn("Available",         width=110),
+            "Security/Standard Support End": st.column_config.TextColumn("Security End",      width=120),
+            "Mainstream/Full Support End":   st.column_config.TextColumn("Mainstream End",    width=140),
+            "Extended/LTSC Support End":     st.column_config.TextColumn("Extended End",      width=120),
+            "Min CPU":                       st.column_config.TextColumn("Min CPU",           width=140),
+            "Min RAM":                       st.column_config.TextColumn("Min RAM",           width=80),
+            "Notes":                         st.column_config.TextColumn("Notes",             width=160),
+            "Recommendation":                st.column_config.TextColumn("💡 Recommendation", width=380),
+            "Upgrade":                       st.column_config.TextColumn("⬆ Upgrade",         width=80),
+            "Replace":                       st.column_config.TextColumn("🔁 Replace",        width=80),
+            "Primary Alternative":           st.column_config.TextColumn("Primary Alt",       width=160),
+        }
+        if "Risk Score" in view.columns:
+            disp["Risk Score"] = st.column_config.NumberColumn("🎯 Risk", width=70)
+        if "Risk Level" in view.columns:
+            disp["Risk Level"] = st.column_config.TextColumn("Risk Level", width=90)
+        if "Days Until EOL" in view.columns:
+            disp["Days Until EOL"] = st.column_config.NumberColumn("📅 Days to EOL", width=100)
+        if "Policy Recommendation" in view.columns:
+            disp["Policy Recommendation"] = st.column_config.TextColumn("🏛️ Policy Rec", width=360)
+        if "Verdict" in view.columns:
+            disp["Verdict"] = st.column_config.TextColumn("Verdict", width=120)
+        # Hide internal color column
+        hide_cols = [c for c in ["Risk Color"] if c in view.columns]
+        if hide_cols:
+            view = view.drop(columns=hide_cols)
+
+        st.caption(f"Showing {len(view)} of {len(os_df)} OS entries")
+        st.dataframe(view, width="stretch", height=520, hide_index=True, column_config=disp)
+
+
+    # ────────────────── Tab 2: DB Versions ────────────────────────────────────────
+    with tab_db:
+        db_df = st.session_state.db_df
+
+        dm1, dm2, dm3, dm4, dm5 = st.columns(5)
+        eol_db = (db_df.get("Status", pd.Series(dtype=str)).str.lower() == "end of life").sum()
+        exp_db = (db_df.get("Status", pd.Series(dtype=str)).str.lower() == "expiring soon").sum()
+        sup_db = (db_df.get("Status", pd.Series(dtype=str)).str.lower() == "supported").sum()
+        rec_db = (db_df["Recommendation"] != "").sum()
+
+        with dm1: st.metric("Total DB Entries",   len(db_df))
+        with dm2: st.metric("🔴 End of Life",     int(eol_db))
+        with dm3: st.metric("🟡 Expiring Soon",   int(exp_db))
+        with dm4: st.metric("🟢 Supported",       int(sup_db))
+        with dm5: st.metric("💡 Recommendations", int(rec_db))
+
+        with st.expander("🔍 Filters", expanded=False):
+            df1, df2, df3, df4 = st.columns(4)
+            with df1:
+                dbs = ["All"] + sorted(db_df["Database"].dropna().unique().tolist())
+                db_f = st.selectbox("Database", dbs)
+            with df2:
+                types_ = ["All"] + sorted(db_df["Type"].dropna().unique().tolist())
+                type_f = st.selectbox("Type", types_)
+            with df3:
+                statuses = ["All"] + sorted(db_df["Status"].dropna().unique().tolist())
+                stat_f = st.selectbox("Status", statuses)
+            with df4:
+                repl_db_f = st.selectbox("Replace", ["All","Y","N"], key="repl_db")
+
+        view_db = db_df.copy()
+        # Global search filter
+        gs = st.session_state.get("global_search", "").strip()
+        if gs:
+            view_db = view_db[view_db.apply(lambda r: gs.lower() in " ".join(str(v) for v in r.values).lower(), axis=1)]
+        if db_f      != "All": view_db = view_db[view_db["Database"] == db_f]
+        if type_f    != "All": view_db = view_db[view_db["Type"]     == type_f]
+        if stat_f    != "All": view_db = view_db[view_db["Status"]   == stat_f]
+        if repl_db_f != "All": view_db = view_db[view_db.get("Replace", pd.Series(dtype=str)) == repl_db_f]
+
+        def _style_status(val):
+            m = {"end of life":   "background-color:#FFCDD2;color:#B71C1C",
+                 "expiring soon": "background-color:#FFE0B2;color:#E65100",
+                 "supported":     "background-color:#C8E6C9;color:#1B5E20",
+                 "future":        "background-color:#E3F2FD;color:#0D47A1"}
+            return m.get(str(val).lower(), "")
+
+        db_disp = {
+            "Database":                st.column_config.TextColumn("Database",        width=180),
+            "Version":                 st.column_config.TextColumn("Version",         width=120),
+            "Type":                    st.column_config.TextColumn("Type",            width=150),
+            "Mainstream / Premier End":st.column_config.TextColumn("Mainstream End",  width=130),
+            "Extended Support End":    st.column_config.TextColumn("Extended End",    width=120),
+            "Status":                  st.column_config.TextColumn("Status",          width=120),
+            "Min CPU":                 st.column_config.TextColumn("Min CPU",         width=120),
+            "Min RAM":                 st.column_config.TextColumn("Min RAM",         width=80),
+            "Notes":                   st.column_config.TextColumn("Notes",           width=180),
+            "Recommendation":          st.column_config.TextColumn("💡 Recommendation",width=360),
+            "Upgrade":                 st.column_config.TextColumn("⬆ Upgrade",       width=80),
+            "Replace":                 st.column_config.TextColumn("🔁 Replace",      width=80),
+            "Primary Alternative":     st.column_config.TextColumn("Primary Alt",     width=150),
+        }
+        if "Risk Score" in view_db.columns:
+            db_disp["Risk Score"] = st.column_config.NumberColumn("🎯 Risk", width=70)
+        if "Risk Level" in view_db.columns:
+            db_disp["Risk Level"] = st.column_config.TextColumn("Risk Level", width=90)
+        if "Days Until EOL" in view_db.columns:
+            db_disp["Days Until EOL"] = st.column_config.NumberColumn("📅 Days to EOL", width=100)
+        if "Policy Recommendation" in view_db.columns:
+            db_disp["Policy Recommendation"] = st.column_config.TextColumn("🏛️ Policy Rec", width=360)
+        if "Verdict" in view_db.columns:
+            db_disp["Verdict"] = st.column_config.TextColumn("Verdict", width=120)
+        # Hide internal color column
+        hide_cols = [c for c in ["Risk Color"] if c in view_db.columns]
+        if hide_cols:
+            view_db = view_db.drop(columns=hide_cols)
+
+        st.caption(f"Showing {len(view_db)} of {len(db_df)} DB entries")
+        st.dataframe(
+            view_db.style.map(_style_status, subset=["Status"]) if "Status" in view_db.columns else view_db,
+            width="stretch", height=520, hide_index=True, column_config=db_disp
         )
-    ] if "Days Until EOL" in os_df_d.columns else pd.DataFrame()
-    expiring_db = db_df_d[
-        db_df_d["Days Until EOL"].apply(
-            lambda d: d is not None and 0 < d <= (proj_end - _date.today()).days
+
+
+    # ────────────────── Tab: Web & App Servers ─────────────────────────────────────
+    with tab_wsas:
+        ws_df = st.session_state.ws_df
+        st.subheader("🌐 Web Server Versions")
+        st.caption("Lifecycle tracking for IIS, Nginx, Apache and other web servers")
+
+        wm1, wm2, wm3, wm4 = st.columns(4)
+        eol_ws = (ws_df.get("Status", pd.Series(dtype=str)).str.lower() == "end of life").sum()
+        exp_ws = (ws_df.get("Status", pd.Series(dtype=str)).str.lower() == "expiring soon").sum()
+        sup_ws = (ws_df.get("Status", pd.Series(dtype=str)).str.lower() == "supported").sum()
+        with wm1: st.metric("Total Web Servers", len(ws_df))
+        with wm2: st.metric("🔴 End of Life", int(eol_ws))
+        with wm3: st.metric("🟡 Expiring Soon", int(exp_ws))
+        with wm4: st.metric("🟢 Supported", int(sup_ws))
+
+        with st.expander("🔍 Filters", expanded=False):
+            wf1, wf2, wf3 = st.columns(3)
+            with wf1:
+                ws_names = ["All"] + sorted(ws_df["Web Server"].dropna().unique().tolist())
+                ws_f = st.selectbox("Web Server", ws_names, key="ws_filter")
+            with wf2:
+                ws_statuses = ["All"] + sorted(ws_df["Status"].dropna().unique().tolist())
+                ws_stat_f = st.selectbox("Status", ws_statuses, key="ws_stat_filter")
+            with wf3:
+                ws_upg_f = st.selectbox("Upgrade", ["All","Y","N"], key="ws_upg_filter")
+
+        view_ws = ws_df.copy()
+        if ws_f != "All": view_ws = view_ws[view_ws["Web Server"] == ws_f]
+        if ws_stat_f != "All": view_ws = view_ws[view_ws["Status"] == ws_stat_f]
+        if ws_upg_f != "All": view_ws = view_ws[view_ws.get("Upgrade", pd.Series(dtype=str)) == ws_upg_f]
+
+        def _style_ws_status(val):
+            m = {"end of life": "background-color:#FFCDD2;color:#B71C1C",
+                 "expiring soon": "background-color:#FFE0B2;color:#E65100",
+                 "supported": "background-color:#C8E6C9;color:#1B5E20"}
+            return m.get(str(val).lower(), "")
+
+        ws_disp = {
+            "Web Server": st.column_config.TextColumn("Web Server", width=140),
+            "Version": st.column_config.TextColumn("Version", width=100),
+            "Type": st.column_config.TextColumn("Type", width=120),
+            "Mainstream / Premier End": st.column_config.TextColumn("Mainstream End", width=130),
+            "Extended Support End": st.column_config.TextColumn("Extended End", width=120),
+            "Status": st.column_config.TextColumn("Status", width=120),
+            "Notes": st.column_config.TextColumn("Notes", width=220),
+            "Recommendation": st.column_config.TextColumn("💡 Recommendation", width=360),
+            "Upgrade": st.column_config.TextColumn("⬆ Upgrade", width=80),
+            "Replace": st.column_config.TextColumn("🔁 Replace", width=80),
+            "Primary Alternative": st.column_config.TextColumn("Primary Alt", width=150),
+        }
+        if "Risk Score" in view_ws.columns:
+            ws_disp["Risk Score"] = st.column_config.NumberColumn("🎯 Risk", width=70)
+        if "Risk Level" in view_ws.columns:
+            ws_disp["Risk Level"] = st.column_config.TextColumn("Risk Level", width=90)
+        if "Days Until EOL" in view_ws.columns:
+            ws_disp["Days Until EOL"] = st.column_config.NumberColumn("📅 Days to EOL", width=100)
+        hide_cols = [c for c in ["Risk Color"] if c in view_ws.columns]
+        if hide_cols: view_ws = view_ws.drop(columns=hide_cols)
+
+        st.caption(f"Showing {len(view_ws)} of {len(ws_df)} Web Server entries")
+        st.dataframe(
+            view_ws.style.map(_style_ws_status, subset=["Status"]) if "Status" in view_ws.columns else view_ws,
+            width="stretch", height=520, hide_index=True, column_config=ws_disp
         )
-    ] if "Days Until EOL" in db_df_d.columns else pd.DataFrame()
-
-    exp_count = len(expiring_os) + len(expiring_db)
-    if exp_count > 0:
-        st.warning(f"**{exp_count} items** have support ending before {proj_end.strftime('%d %b %Y')}")
-        ex1, ex2 = st.columns(2)
-        with ex1:
-            if not expiring_os.empty:
-                st.caption(f"OS: {len(expiring_os)} items expiring")
-                show_cols = [c for c in ["OS Version", "Days Until EOL", "Risk Score", "Risk Level", "Recommendation"] if c in expiring_os.columns]
-                st.dataframe(expiring_os[show_cols].sort_values("Days Until EOL"), hide_index=True, height=250)
-        with ex2:
-            if not expiring_db.empty:
-                st.caption(f"DB: {len(expiring_db)} items expiring")
-                show_cols = [c for c in ["Database", "Version", "Days Until EOL", "Risk Score", "Risk Level", "Recommendation"] if c in expiring_db.columns]
-                st.dataframe(expiring_db[show_cols].sort_values("Days Until EOL"), hide_index=True, height=250)
-    else:
-        st.success("No items expiring during the project window.")
 
 
-# ────────────────── Tab 1: OS Versions ────────────────────────────────────────
-with tab_os:
-    os_df = st.session_state.os_df
+        # ────────────────── Section: Application Servers ─────────────────────────
+        st.divider()
+        as_df = st.session_state.as_df
+        st.subheader("⚙️ Application Server Versions")
+        st.caption("Lifecycle tracking for Tomcat, JBoss, WebSphere, Kafka, RabbitMQ, Kubernetes and more")
 
-    m1, m2, m3, m4, m5 = st.columns(5)
+        am1, am2, am3, am4 = st.columns(4)
+        eol_as = (as_df.get("Status", pd.Series(dtype=str)).str.lower() == "end of life").sum()
+        exp_as = (as_df.get("Status", pd.Series(dtype=str)).str.lower() == "expiring soon").sum()
+        sup_as = (as_df.get("Status", pd.Series(dtype=str)).str.lower() == "supported").sum()
+        with am1: st.metric("Total App Servers", len(as_df))
+        with am2: st.metric("🔴 End of Life", int(eol_as))
+        with am3: st.metric("🟡 Expiring Soon", int(exp_as))
+        with am4: st.metric("🟢 Supported", int(sup_as))
 
-    def is_eol(row):
-        for col in ["Extended/LTSC Support End", "Mainstream/Full Support End"]:
-            v = str(row.get(col, ""))
-            if any(k in v.lower() for k in ["ended", "end of"]):
-                return True
-            if len(v) == 10 and v[0].isdigit():
-                try:
-                    from datetime import datetime as dt
-                    return dt.strptime(v, "%Y-%m-%d") < dt.now()
-                except Exception:
-                    pass
-        return False
+        with st.expander("🔍 Filters", expanded=False):
+            af1, af2, af3 = st.columns(3)
+            with af1:
+                as_names = ["All"] + sorted(as_df["App Server"].dropna().unique().tolist())
+                as_f = st.selectbox("App Server", as_names, key="as_filter")
+            with af2:
+                as_types = ["All"] + sorted(as_df["Type"].dropna().unique().tolist())
+                as_type_f = st.selectbox("Type", as_types, key="as_type_filter")
+            with af3:
+                as_statuses = ["All"] + sorted(as_df["Status"].dropna().unique().tolist())
+                as_stat_f = st.selectbox("Status", as_statuses, key="as_stat_filter")
 
-    eol_count  = sum(1 for _, r in os_df.iterrows() if is_eol(r))
-    upg_count  = (os_df.get("Upgrade",  pd.Series(dtype=str)) == "Y").sum()
-    repl_count = (os_df.get("Replace",  pd.Series(dtype=str)) == "Y").sum()
-    rec_count  = (os_df["Recommendation"] != "").sum()
+        view_as = as_df.copy()
+        if as_f != "All": view_as = view_as[view_as["App Server"] == as_f]
+        if as_type_f != "All": view_as = view_as[view_as["Type"] == as_type_f]
+        if as_stat_f != "All": view_as = view_as[view_as["Status"] == as_stat_f]
 
-    with m1: st.metric("Total OS Entries",   len(os_df))
-    with m2: st.metric("⚠️ EOL / Expired",   int(eol_count))
-    with m3: st.metric("⬆️ Upgrade Flagged", int(upg_count))
-    with m4: st.metric("🔁 Replace Flagged", int(repl_count))
-    with m5: st.metric("💡 Recommendations", int(rec_count))
+        def _style_as_status(val):
+            m = {"end of life": "background-color:#FFCDD2;color:#B71C1C",
+                 "expiring soon": "background-color:#FFE0B2;color:#E65100",
+                 "supported": "background-color:#C8E6C9;color:#1B5E20"}
+            return m.get(str(val).lower(), "")
 
-    with st.expander("🔍 Filters", expanded=False):
-        fc1, fc2, fc3, fc4 = st.columns(4)
-        with fc1:
-            families = ["All"] + sorted(set(
-                v.split()[0] for v in os_df["OS Version"].dropna() if v and not v.startswith("[")
-            ))
-            fam_f = st.selectbox("OS Family", families)
-        with fc2: upg_f  = st.selectbox("Upgrade", ["All","Y","N"])
-        with fc3: repl_f = st.selectbox("Replace", ["All","Y","N"])
-        with fc4: rec_f  = st.selectbox("Has Recommendation", ["All","Yes","No"])
+        as_disp = {
+            "App Server": st.column_config.TextColumn("App Server", width=160),
+            "Version": st.column_config.TextColumn("Version", width=100),
+            "Type": st.column_config.TextColumn("Type", width=160),
+            "Mainstream / Premier End": st.column_config.TextColumn("Mainstream End", width=130),
+            "Extended Support End": st.column_config.TextColumn("Extended End", width=120),
+            "Status": st.column_config.TextColumn("Status", width=120),
+            "Notes": st.column_config.TextColumn("Notes", width=220),
+            "Recommendation": st.column_config.TextColumn("💡 Recommendation", width=360),
+            "Upgrade": st.column_config.TextColumn("⬆ Upgrade", width=80),
+            "Replace": st.column_config.TextColumn("🔁 Replace", width=80),
+            "Primary Alternative": st.column_config.TextColumn("Primary Alt", width=150),
+        }
+        if "Risk Score" in view_as.columns:
+            as_disp["Risk Score"] = st.column_config.NumberColumn("🎯 Risk", width=70)
+        if "Risk Level" in view_as.columns:
+            as_disp["Risk Level"] = st.column_config.TextColumn("Risk Level", width=90)
+        if "Days Until EOL" in view_as.columns:
+            as_disp["Days Until EOL"] = st.column_config.NumberColumn("📅 Days to EOL", width=100)
+        hide_cols = [c for c in ["Risk Color"] if c in view_as.columns]
+        if hide_cols: view_as = view_as.drop(columns=hide_cols)
 
-    view = os_df.copy()
-    # Global search filter
-    gs = st.session_state.get("global_search", "").strip()
-    if gs:
-        view = view[view.apply(lambda r: gs.lower() in " ".join(str(v) for v in r.values).lower(), axis=1)]
-    if fam_f  != "All": view = view[view["OS Version"].str.startswith(fam_f, na=False)]
-    if upg_f  != "All": view = view[view.get("Upgrade", pd.Series(dtype=str)) == upg_f]
-    if repl_f != "All": view = view[view.get("Replace", pd.Series(dtype=str)) == repl_f]
-    if rec_f  == "Yes": view = view[view["Recommendation"] != ""]
-    if rec_f  == "No":  view = view[view["Recommendation"] == ""]
-
-    disp = {
-        "OS Version":                    st.column_config.TextColumn("OS Version",        width=220),
-        "Availability Date":             st.column_config.TextColumn("Available",         width=110),
-        "Security/Standard Support End": st.column_config.TextColumn("Security End",      width=120),
-        "Mainstream/Full Support End":   st.column_config.TextColumn("Mainstream End",    width=140),
-        "Extended/LTSC Support End":     st.column_config.TextColumn("Extended End",      width=120),
-        "Min CPU":                       st.column_config.TextColumn("Min CPU",           width=140),
-        "Min RAM":                       st.column_config.TextColumn("Min RAM",           width=80),
-        "Notes":                         st.column_config.TextColumn("Notes",             width=160),
-        "Recommendation":                st.column_config.TextColumn("💡 Recommendation", width=380),
-        "Upgrade":                       st.column_config.TextColumn("⬆ Upgrade",         width=80),
-        "Replace":                       st.column_config.TextColumn("🔁 Replace",        width=80),
-        "Primary Alternative":           st.column_config.TextColumn("Primary Alt",       width=160),
-    }
-    if "Risk Score" in view.columns:
-        disp["Risk Score"] = st.column_config.NumberColumn("🎯 Risk", width=70)
-    if "Risk Level" in view.columns:
-        disp["Risk Level"] = st.column_config.TextColumn("Risk Level", width=90)
-    if "Days Until EOL" in view.columns:
-        disp["Days Until EOL"] = st.column_config.NumberColumn("📅 Days to EOL", width=100)
-    if "Policy Recommendation" in view.columns:
-        disp["Policy Recommendation"] = st.column_config.TextColumn("🏛️ Policy Rec", width=360)
-    if "Verdict" in view.columns:
-        disp["Verdict"] = st.column_config.TextColumn("Verdict", width=120)
-    # Hide internal color column
-    hide_cols = [c for c in ["Risk Color"] if c in view.columns]
-    if hide_cols:
-        view = view.drop(columns=hide_cols)
-
-    st.caption(f"Showing {len(view)} of {len(os_df)} OS entries")
-    st.dataframe(view, width="stretch", height=520, hide_index=True, column_config=disp)
+        st.caption(f"Showing {len(view_as)} of {len(as_df)} App Server entries")
+        st.dataframe(
+            view_as.style.map(_style_as_status, subset=["Status"]) if "Status" in view_as.columns else view_as,
+            width="stretch", height=520, hide_index=True, column_config=as_disp
+        )
 
 
-# ────────────────── Tab 2: DB Versions ────────────────────────────────────────
-with tab_db:
-    db_df = st.session_state.db_df
+    # ────────────────── Tab: Frameworks ───────────────────────────────────────────
+    with tab_fw:
+        fw_df = st.session_state.fw_df
+        st.subheader("📦 Framework & Runtime Versions")
+        st.caption("Lifecycle tracking for .NET, React, Angular, Spring Boot, Node.js, Java, Python, PHP and more")
 
-    dm1, dm2, dm3, dm4, dm5 = st.columns(5)
-    eol_db = (db_df.get("Status", pd.Series(dtype=str)).str.lower() == "end of life").sum()
-    exp_db = (db_df.get("Status", pd.Series(dtype=str)).str.lower() == "expiring soon").sum()
-    sup_db = (db_df.get("Status", pd.Series(dtype=str)).str.lower() == "supported").sum()
-    rec_db = (db_df["Recommendation"] != "").sum()
+        fm1, fm2, fm3, fm4 = st.columns(4)
+        eol_fw = (fw_df.get("Status", pd.Series(dtype=str)).str.lower() == "end of life").sum()
+        exp_fw = (fw_df.get("Status", pd.Series(dtype=str)).str.lower() == "expiring soon").sum()
+        sup_fw = (fw_df.get("Status", pd.Series(dtype=str)).str.lower() == "supported").sum()
+        with fm1: st.metric("Total Frameworks", len(fw_df))
+        with fm2: st.metric("🔴 End of Life", int(eol_fw))
+        with fm3: st.metric("🟡 Expiring Soon", int(exp_fw))
+        with fm4: st.metric("🟢 Supported", int(sup_fw))
 
-    with dm1: st.metric("Total DB Entries",   len(db_df))
-    with dm2: st.metric("🔴 End of Life",     int(eol_db))
-    with dm3: st.metric("🟡 Expiring Soon",   int(exp_db))
-    with dm4: st.metric("🟢 Supported",       int(sup_db))
-    with dm5: st.metric("💡 Recommendations", int(rec_db))
+        with st.expander("🔍 Filters", expanded=False):
+            ff1, ff2, ff3 = st.columns(3)
+            with ff1:
+                fw_names = ["All"] + sorted(fw_df["Framework"].dropna().unique().tolist())
+                fw_f = st.selectbox("Framework", fw_names, key="fw_filter")
+            with ff2:
+                fw_types = ["All"] + sorted(fw_df["Type"].dropna().unique().tolist())
+                fw_type_f = st.selectbox("Type", fw_types, key="fw_type_filter")
+            with ff3:
+                fw_statuses = ["All"] + sorted(fw_df["Status"].dropna().unique().tolist())
+                fw_stat_f = st.selectbox("Status", fw_statuses, key="fw_stat_filter")
 
-    with st.expander("🔍 Filters", expanded=False):
-        df1, df2, df3, df4 = st.columns(4)
-        with df1:
-            dbs = ["All"] + sorted(db_df["Database"].dropna().unique().tolist())
-            db_f = st.selectbox("Database", dbs)
-        with df2:
-            types_ = ["All"] + sorted(db_df["Type"].dropna().unique().tolist())
-            type_f = st.selectbox("Type", types_)
-        with df3:
-            statuses = ["All"] + sorted(db_df["Status"].dropna().unique().tolist())
-            stat_f = st.selectbox("Status", statuses)
-        with df4:
-            repl_db_f = st.selectbox("Replace", ["All","Y","N"], key="repl_db")
+        view_fw = fw_df.copy()
+        if fw_f != "All": view_fw = view_fw[view_fw["Framework"] == fw_f]
+        if fw_type_f != "All": view_fw = view_fw[view_fw["Type"] == fw_type_f]
+        if fw_stat_f != "All": view_fw = view_fw[view_fw["Status"] == fw_stat_f]
 
-    view_db = db_df.copy()
-    # Global search filter
-    gs = st.session_state.get("global_search", "").strip()
-    if gs:
-        view_db = view_db[view_db.apply(lambda r: gs.lower() in " ".join(str(v) for v in r.values).lower(), axis=1)]
-    if db_f      != "All": view_db = view_db[view_db["Database"] == db_f]
-    if type_f    != "All": view_db = view_db[view_db["Type"]     == type_f]
-    if stat_f    != "All": view_db = view_db[view_db["Status"]   == stat_f]
-    if repl_db_f != "All": view_db = view_db[view_db.get("Replace", pd.Series(dtype=str)) == repl_db_f]
+        def _style_fw_status(val):
+            m = {"end of life": "background-color:#FFCDD2;color:#B71C1C",
+                 "expiring soon": "background-color:#FFE0B2;color:#E65100",
+                 "supported": "background-color:#C8E6C9;color:#1B5E20",
+                 "future": "background-color:#E3F2FD;color:#0D47A1"}
+            return m.get(str(val).lower(), "")
 
-    def _style_status(val):
-        m = {"end of life":   "background-color:#FFCDD2;color:#B71C1C",
-             "expiring soon": "background-color:#FFE0B2;color:#E65100",
-             "supported":     "background-color:#C8E6C9;color:#1B5E20",
-             "future":        "background-color:#E3F2FD;color:#0D47A1"}
-        return m.get(str(val).lower(), "")
+        fw_disp = {
+            "Framework": st.column_config.TextColumn("Framework", width=160),
+            "Version": st.column_config.TextColumn("Version", width=120),
+            "Type": st.column_config.TextColumn("Type", width=160),
+            "Mainstream / Premier End": st.column_config.TextColumn("Mainstream End", width=130),
+            "Extended Support End": st.column_config.TextColumn("Extended End", width=120),
+            "Status": st.column_config.TextColumn("Status", width=120),
+            "Notes": st.column_config.TextColumn("Notes", width=220),
+            "Recommendation": st.column_config.TextColumn("💡 Recommendation", width=360),
+            "Upgrade": st.column_config.TextColumn("⬆ Upgrade", width=80),
+            "Replace": st.column_config.TextColumn("🔁 Replace", width=80),
+            "Primary Alternative": st.column_config.TextColumn("Primary Alt", width=150),
+        }
+        if "Risk Score" in view_fw.columns:
+            fw_disp["Risk Score"] = st.column_config.NumberColumn("🎯 Risk", width=70)
+        if "Risk Level" in view_fw.columns:
+            fw_disp["Risk Level"] = st.column_config.TextColumn("Risk Level", width=90)
+        if "Days Until EOL" in view_fw.columns:
+            fw_disp["Days Until EOL"] = st.column_config.NumberColumn("📅 Days to EOL", width=100)
+        hide_cols = [c for c in ["Risk Color"] if c in view_fw.columns]
+        if hide_cols: view_fw = view_fw.drop(columns=hide_cols)
 
-    db_disp = {
-        "Database":                st.column_config.TextColumn("Database",        width=180),
-        "Version":                 st.column_config.TextColumn("Version",         width=120),
-        "Type":                    st.column_config.TextColumn("Type",            width=150),
-        "Mainstream / Premier End":st.column_config.TextColumn("Mainstream End",  width=130),
-        "Extended Support End":    st.column_config.TextColumn("Extended End",    width=120),
-        "Status":                  st.column_config.TextColumn("Status",          width=120),
-        "Min CPU":                 st.column_config.TextColumn("Min CPU",         width=120),
-        "Min RAM":                 st.column_config.TextColumn("Min RAM",         width=80),
-        "Notes":                   st.column_config.TextColumn("Notes",           width=180),
-        "Recommendation":          st.column_config.TextColumn("💡 Recommendation",width=360),
-        "Upgrade":                 st.column_config.TextColumn("⬆ Upgrade",       width=80),
-        "Replace":                 st.column_config.TextColumn("🔁 Replace",      width=80),
-        "Primary Alternative":     st.column_config.TextColumn("Primary Alt",     width=150),
-    }
-    if "Risk Score" in view_db.columns:
-        db_disp["Risk Score"] = st.column_config.NumberColumn("🎯 Risk", width=70)
-    if "Risk Level" in view_db.columns:
-        db_disp["Risk Level"] = st.column_config.TextColumn("Risk Level", width=90)
-    if "Days Until EOL" in view_db.columns:
-        db_disp["Days Until EOL"] = st.column_config.NumberColumn("📅 Days to EOL", width=100)
-    if "Policy Recommendation" in view_db.columns:
-        db_disp["Policy Recommendation"] = st.column_config.TextColumn("🏛️ Policy Rec", width=360)
-    if "Verdict" in view_db.columns:
-        db_disp["Verdict"] = st.column_config.TextColumn("Verdict", width=120)
-    # Hide internal color column
-    hide_cols = [c for c in ["Risk Color"] if c in view_db.columns]
-    if hide_cols:
-        view_db = view_db.drop(columns=hide_cols)
-
-    st.caption(f"Showing {len(view_db)} of {len(db_df)} DB entries")
-    st.dataframe(
-        view_db.style.map(_style_status, subset=["Status"]) if "Status" in view_db.columns else view_db,
-        width="stretch", height=520, hide_index=True, column_config=db_disp
-    )
-
-
-# ────────────────── Tab: Web & App Servers ─────────────────────────────────────
-with tab_wsas:
-    ws_df = st.session_state.ws_df
-    st.subheader("🌐 Web Server Versions")
-    st.caption("Lifecycle tracking for IIS, Nginx, Apache and other web servers")
-
-    wm1, wm2, wm3, wm4 = st.columns(4)
-    eol_ws = (ws_df.get("Status", pd.Series(dtype=str)).str.lower() == "end of life").sum()
-    exp_ws = (ws_df.get("Status", pd.Series(dtype=str)).str.lower() == "expiring soon").sum()
-    sup_ws = (ws_df.get("Status", pd.Series(dtype=str)).str.lower() == "supported").sum()
-    with wm1: st.metric("Total Web Servers", len(ws_df))
-    with wm2: st.metric("🔴 End of Life", int(eol_ws))
-    with wm3: st.metric("🟡 Expiring Soon", int(exp_ws))
-    with wm4: st.metric("🟢 Supported", int(sup_ws))
-
-    with st.expander("🔍 Filters", expanded=False):
-        wf1, wf2, wf3 = st.columns(3)
-        with wf1:
-            ws_names = ["All"] + sorted(ws_df["Web Server"].dropna().unique().tolist())
-            ws_f = st.selectbox("Web Server", ws_names, key="ws_filter")
-        with wf2:
-            ws_statuses = ["All"] + sorted(ws_df["Status"].dropna().unique().tolist())
-            ws_stat_f = st.selectbox("Status", ws_statuses, key="ws_stat_filter")
-        with wf3:
-            ws_upg_f = st.selectbox("Upgrade", ["All","Y","N"], key="ws_upg_filter")
-
-    view_ws = ws_df.copy()
-    if ws_f != "All": view_ws = view_ws[view_ws["Web Server"] == ws_f]
-    if ws_stat_f != "All": view_ws = view_ws[view_ws["Status"] == ws_stat_f]
-    if ws_upg_f != "All": view_ws = view_ws[view_ws.get("Upgrade", pd.Series(dtype=str)) == ws_upg_f]
-
-    def _style_ws_status(val):
-        m = {"end of life": "background-color:#FFCDD2;color:#B71C1C",
-             "expiring soon": "background-color:#FFE0B2;color:#E65100",
-             "supported": "background-color:#C8E6C9;color:#1B5E20"}
-        return m.get(str(val).lower(), "")
-
-    ws_disp = {
-        "Web Server": st.column_config.TextColumn("Web Server", width=140),
-        "Version": st.column_config.TextColumn("Version", width=100),
-        "Type": st.column_config.TextColumn("Type", width=120),
-        "Mainstream / Premier End": st.column_config.TextColumn("Mainstream End", width=130),
-        "Extended Support End": st.column_config.TextColumn("Extended End", width=120),
-        "Status": st.column_config.TextColumn("Status", width=120),
-        "Notes": st.column_config.TextColumn("Notes", width=220),
-        "Recommendation": st.column_config.TextColumn("💡 Recommendation", width=360),
-        "Upgrade": st.column_config.TextColumn("⬆ Upgrade", width=80),
-        "Replace": st.column_config.TextColumn("🔁 Replace", width=80),
-        "Primary Alternative": st.column_config.TextColumn("Primary Alt", width=150),
-    }
-    if "Risk Score" in view_ws.columns:
-        ws_disp["Risk Score"] = st.column_config.NumberColumn("🎯 Risk", width=70)
-    if "Risk Level" in view_ws.columns:
-        ws_disp["Risk Level"] = st.column_config.TextColumn("Risk Level", width=90)
-    if "Days Until EOL" in view_ws.columns:
-        ws_disp["Days Until EOL"] = st.column_config.NumberColumn("📅 Days to EOL", width=100)
-    hide_cols = [c for c in ["Risk Color"] if c in view_ws.columns]
-    if hide_cols: view_ws = view_ws.drop(columns=hide_cols)
-
-    st.caption(f"Showing {len(view_ws)} of {len(ws_df)} Web Server entries")
-    st.dataframe(
-        view_ws.style.map(_style_ws_status, subset=["Status"]) if "Status" in view_ws.columns else view_ws,
-        width="stretch", height=520, hide_index=True, column_config=ws_disp
-    )
-
-
-    # ────────────────── Section: Application Servers ─────────────────────────
-    st.divider()
-    as_df = st.session_state.as_df
-    st.subheader("⚙️ Application Server Versions")
-    st.caption("Lifecycle tracking for Tomcat, JBoss, WebSphere, Kafka, RabbitMQ, Kubernetes and more")
-
-    am1, am2, am3, am4 = st.columns(4)
-    eol_as = (as_df.get("Status", pd.Series(dtype=str)).str.lower() == "end of life").sum()
-    exp_as = (as_df.get("Status", pd.Series(dtype=str)).str.lower() == "expiring soon").sum()
-    sup_as = (as_df.get("Status", pd.Series(dtype=str)).str.lower() == "supported").sum()
-    with am1: st.metric("Total App Servers", len(as_df))
-    with am2: st.metric("🔴 End of Life", int(eol_as))
-    with am3: st.metric("🟡 Expiring Soon", int(exp_as))
-    with am4: st.metric("🟢 Supported", int(sup_as))
-
-    with st.expander("🔍 Filters", expanded=False):
-        af1, af2, af3 = st.columns(3)
-        with af1:
-            as_names = ["All"] + sorted(as_df["App Server"].dropna().unique().tolist())
-            as_f = st.selectbox("App Server", as_names, key="as_filter")
-        with af2:
-            as_types = ["All"] + sorted(as_df["Type"].dropna().unique().tolist())
-            as_type_f = st.selectbox("Type", as_types, key="as_type_filter")
-        with af3:
-            as_statuses = ["All"] + sorted(as_df["Status"].dropna().unique().tolist())
-            as_stat_f = st.selectbox("Status", as_statuses, key="as_stat_filter")
-
-    view_as = as_df.copy()
-    if as_f != "All": view_as = view_as[view_as["App Server"] == as_f]
-    if as_type_f != "All": view_as = view_as[view_as["Type"] == as_type_f]
-    if as_stat_f != "All": view_as = view_as[view_as["Status"] == as_stat_f]
-
-    def _style_as_status(val):
-        m = {"end of life": "background-color:#FFCDD2;color:#B71C1C",
-             "expiring soon": "background-color:#FFE0B2;color:#E65100",
-             "supported": "background-color:#C8E6C9;color:#1B5E20"}
-        return m.get(str(val).lower(), "")
-
-    as_disp = {
-        "App Server": st.column_config.TextColumn("App Server", width=160),
-        "Version": st.column_config.TextColumn("Version", width=100),
-        "Type": st.column_config.TextColumn("Type", width=160),
-        "Mainstream / Premier End": st.column_config.TextColumn("Mainstream End", width=130),
-        "Extended Support End": st.column_config.TextColumn("Extended End", width=120),
-        "Status": st.column_config.TextColumn("Status", width=120),
-        "Notes": st.column_config.TextColumn("Notes", width=220),
-        "Recommendation": st.column_config.TextColumn("💡 Recommendation", width=360),
-        "Upgrade": st.column_config.TextColumn("⬆ Upgrade", width=80),
-        "Replace": st.column_config.TextColumn("🔁 Replace", width=80),
-        "Primary Alternative": st.column_config.TextColumn("Primary Alt", width=150),
-    }
-    if "Risk Score" in view_as.columns:
-        as_disp["Risk Score"] = st.column_config.NumberColumn("🎯 Risk", width=70)
-    if "Risk Level" in view_as.columns:
-        as_disp["Risk Level"] = st.column_config.TextColumn("Risk Level", width=90)
-    if "Days Until EOL" in view_as.columns:
-        as_disp["Days Until EOL"] = st.column_config.NumberColumn("📅 Days to EOL", width=100)
-    hide_cols = [c for c in ["Risk Color"] if c in view_as.columns]
-    if hide_cols: view_as = view_as.drop(columns=hide_cols)
-
-    st.caption(f"Showing {len(view_as)} of {len(as_df)} App Server entries")
-    st.dataframe(
-        view_as.style.map(_style_as_status, subset=["Status"]) if "Status" in view_as.columns else view_as,
-        width="stretch", height=520, hide_index=True, column_config=as_disp
-    )
-
-
-# ────────────────── Tab: Frameworks ───────────────────────────────────────────
-with tab_fw:
-    fw_df = st.session_state.fw_df
-    st.subheader("📦 Framework & Runtime Versions")
-    st.caption("Lifecycle tracking for .NET, React, Angular, Spring Boot, Node.js, Java, Python, PHP and more")
-
-    fm1, fm2, fm3, fm4 = st.columns(4)
-    eol_fw = (fw_df.get("Status", pd.Series(dtype=str)).str.lower() == "end of life").sum()
-    exp_fw = (fw_df.get("Status", pd.Series(dtype=str)).str.lower() == "expiring soon").sum()
-    sup_fw = (fw_df.get("Status", pd.Series(dtype=str)).str.lower() == "supported").sum()
-    with fm1: st.metric("Total Frameworks", len(fw_df))
-    with fm2: st.metric("🔴 End of Life", int(eol_fw))
-    with fm3: st.metric("🟡 Expiring Soon", int(exp_fw))
-    with fm4: st.metric("🟢 Supported", int(sup_fw))
-
-    with st.expander("🔍 Filters", expanded=False):
-        ff1, ff2, ff3 = st.columns(3)
-        with ff1:
-            fw_names = ["All"] + sorted(fw_df["Framework"].dropna().unique().tolist())
-            fw_f = st.selectbox("Framework", fw_names, key="fw_filter")
-        with ff2:
-            fw_types = ["All"] + sorted(fw_df["Type"].dropna().unique().tolist())
-            fw_type_f = st.selectbox("Type", fw_types, key="fw_type_filter")
-        with ff3:
-            fw_statuses = ["All"] + sorted(fw_df["Status"].dropna().unique().tolist())
-            fw_stat_f = st.selectbox("Status", fw_statuses, key="fw_stat_filter")
-
-    view_fw = fw_df.copy()
-    if fw_f != "All": view_fw = view_fw[view_fw["Framework"] == fw_f]
-    if fw_type_f != "All": view_fw = view_fw[view_fw["Type"] == fw_type_f]
-    if fw_stat_f != "All": view_fw = view_fw[view_fw["Status"] == fw_stat_f]
-
-    def _style_fw_status(val):
-        m = {"end of life": "background-color:#FFCDD2;color:#B71C1C",
-             "expiring soon": "background-color:#FFE0B2;color:#E65100",
-             "supported": "background-color:#C8E6C9;color:#1B5E20",
-             "future": "background-color:#E3F2FD;color:#0D47A1"}
-        return m.get(str(val).lower(), "")
-
-    fw_disp = {
-        "Framework": st.column_config.TextColumn("Framework", width=160),
-        "Version": st.column_config.TextColumn("Version", width=120),
-        "Type": st.column_config.TextColumn("Type", width=160),
-        "Mainstream / Premier End": st.column_config.TextColumn("Mainstream End", width=130),
-        "Extended Support End": st.column_config.TextColumn("Extended End", width=120),
-        "Status": st.column_config.TextColumn("Status", width=120),
-        "Notes": st.column_config.TextColumn("Notes", width=220),
-        "Recommendation": st.column_config.TextColumn("💡 Recommendation", width=360),
-        "Upgrade": st.column_config.TextColumn("⬆ Upgrade", width=80),
-        "Replace": st.column_config.TextColumn("🔁 Replace", width=80),
-        "Primary Alternative": st.column_config.TextColumn("Primary Alt", width=150),
-    }
-    if "Risk Score" in view_fw.columns:
-        fw_disp["Risk Score"] = st.column_config.NumberColumn("🎯 Risk", width=70)
-    if "Risk Level" in view_fw.columns:
-        fw_disp["Risk Level"] = st.column_config.TextColumn("Risk Level", width=90)
-    if "Days Until EOL" in view_fw.columns:
-        fw_disp["Days Until EOL"] = st.column_config.NumberColumn("📅 Days to EOL", width=100)
-    hide_cols = [c for c in ["Risk Color"] if c in view_fw.columns]
-    if hide_cols: view_fw = view_fw.drop(columns=hide_cols)
-
-    st.caption(f"Showing {len(view_fw)} of {len(fw_df)} Framework entries")
-    st.dataframe(
-        view_fw.style.map(_style_fw_status, subset=["Status"]) if "Status" in view_fw.columns else view_fw,
-        width="stretch", height=520, hide_index=True, column_config=fw_disp
-    )
+        st.caption(f"Showing {len(view_fw)} of {len(fw_df)} Framework entries")
+        st.dataframe(
+            view_fw.style.map(_style_fw_status, subset=["Status"]) if "Status" in view_fw.columns else view_fw,
+            width="stretch", height=520, hide_index=True, column_config=fw_disp
+        )
 
 
 # ────────────────── Strategist Panel (shown on Discovery page) ─────────────────
