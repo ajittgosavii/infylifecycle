@@ -1803,6 +1803,42 @@ if _show_strategist:
                             + (f" — <em>{versions_preview}</em>" if versions_preview else "")
                             + f" ({count} tracked)</small>", unsafe_allow_html=True)
 
+                # ── "Other" OS handling ───────────────────────────────────
+                if st.session_state.get("survey_os_Other", False):
+                    st.markdown("---")
+                    st.markdown("**What OS is missing from the list?**")
+                    _other_os = st.text_input("OS name", placeholder="e.g. Gentoo Linux, Arch Linux, Chrome OS Flex...",
+                                              key="survey_other_os_input")
+                    if _other_os:
+                        if st.button("🔍 Verify & Add OS", key="verify_other_os", type="primary"):
+                            with st.spinner("🧠 Agent 5 checking..."):
+                                try:
+                                    agent5 = PolicyAnalysisAgent(api_key=api_key)
+                                    result = agent5.verify_unknown_os(_other_os, st.session_state.os_df)
+                                except Exception:
+                                    result = {"match_found": False, "is_valid_os": True, "os_name": _other_os}
+
+                            if result.get("match_found"):
+                                st.success(f"✅ **\"{_other_os}\"** is already tracked as **{result.get('matched_to', '?')}** in the baseline.")
+                            elif result.get("is_valid_os"):
+                                os_name = result.get("os_name", _other_os)
+                                new_row = {
+                                    "OS Version": os_name, "Availability Date": "",
+                                    "Security/Standard Support End": "", "Mainstream/Full Support End": "",
+                                    "Extended/LTSC Support End": "",
+                                    "Notes": f"Added by Agent 5 survey — {datetime.now().strftime('%d %b %Y')}",
+                                    "Recommendation": "", "Upgrade": "N", "Replace": "N",
+                                    "Primary Alternative": "", "Secondary Alternative": ""
+                                }
+                                st.session_state.os_df = pd.concat(
+                                    [st.session_state.os_df, pd.DataFrame([new_row])], ignore_index=True)
+                                st.session_state.os_df = add_risk_scores(st.session_state.os_df, "OS")
+                                save_os_df(st.session_state.os_df)
+                                st.success(f"✅ **{os_name}** added to baseline! Agent 1 will scan lifecycle data on next run.")
+                                st.rerun()
+                            else:
+                                st.error(f"❌ \"{_other_os}\" does not appear to be a recognized OS.")
+
                 st.divider()
                 st.markdown("##### 🗄️ Database Families")
                 st.caption("Confirm database families in your environment")
@@ -1825,6 +1861,34 @@ if _show_strategist:
                             f"<small style='color:#6B7280;'>{desc}"
                             + (f" — <em>{versions_preview}</em>" if versions_preview else "")
                             + f" ({count} tracked)</small>", unsafe_allow_html=True)
+                # ── "Other" DB handling ───────────────────────────────────
+                if st.session_state.get("survey_db_Other", False):
+                    st.markdown("---")
+                    st.markdown("**What database is missing from the list?**")
+                    _other_db = st.text_input("Database name", placeholder="e.g. ClickHouse, ScyllaDB, TiDB...",
+                                              key="survey_other_db_input")
+                    if _other_db:
+                        if st.button("🔍 Verify & Add Database", key="verify_other_db", type="primary"):
+                            known = st.session_state.db_df["Database"].str.lower().tolist()
+                            match_found = any(_other_db.lower() in k for k in known)
+                            if match_found:
+                                st.success(f"✅ **\"{_other_db}\"** is already tracked in the baseline.")
+                            else:
+                                new_row = {
+                                    "Database": _other_db, "Version": "Latest", "Type": "Database",
+                                    "Mainstream / Premier End": "", "Extended Support End": "",
+                                    "Status": "Supported",
+                                    "Notes": f"Added by Agent 5 survey — {datetime.now().strftime('%d %b %Y')}",
+                                    "Recommendation": "", "Upgrade": "N", "Replace": "N",
+                                    "Primary Alternative": "", "Secondary Alternative": ""
+                                }
+                                st.session_state.db_df = pd.concat(
+                                    [st.session_state.db_df, pd.DataFrame([new_row])], ignore_index=True)
+                                st.session_state.db_df = add_risk_scores(st.session_state.db_df, "DB")
+                                save_db_df(st.session_state.db_df)
+                                st.success(f"✅ **{_other_db}** added to baseline! Agent 1 will scan lifecycle data on next run.")
+                                st.rerun()
+
                 st.divider()
                 st.checkbox("I have reviewed and confirmed the Upgrade Mandates", key="tab_done_upgrade", value=False)
 
