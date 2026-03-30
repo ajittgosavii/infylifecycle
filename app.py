@@ -321,6 +321,20 @@ if st.session_state.get("a5_status") == "idle":
             st.session_state["show_chat"] = True
 
 
+def _log_export(file_type, filename):
+    """Log an export event to SQLite for audit trail."""
+    try:
+        log = load_app_state("export_log")
+        if not isinstance(log, list):
+            log = []
+        log.append({"Type": file_type, "Filename": filename,
+                     "Timestamp": datetime.now().strftime("%d %b %Y %H:%M"),
+                     "OS Rows": len(st.session_state.os_df),
+                     "DB Rows": len(st.session_state.db_df)})
+        save_app_state("export_log", log[-50:])  # keep last 50
+    except Exception:
+        pass
+
 def _save_strategist_state():
     """Persist all Strategist survey data to SQLite."""
     data = {}
@@ -382,6 +396,9 @@ _NAV_PAGES = {
     ],
     "OPTIMIZE": [
         ("Cloud Modernization",    "☁️", True),
+    ],
+    "SYSTEM": [
+        ("History",                "📜", True),
     ],
 }
 
@@ -1195,6 +1212,129 @@ if _cur_page == "Version Lifecycle":
         "📊 Dashboard", "🖥️ OS Versions", "🗄️ DB Versions",
         "🌐 Web & App Servers", "📦 Frameworks",
     ])
+elif _cur_page == "History":
+    # ════════════════════════════════════════════════════════════════════════
+    # HISTORY PAGE — 4 tabs: Sessions, Agent Runs, Snapshots, Exports
+    # ════════════════════════════════════════════════════════════════════════
+    st.subheader("📜 History & Audit Trail")
+    st.caption("Complete audit trail of all agent activity, sessions, and exports")
+
+    _h_sessions, _h_agents, _h_snapshots, _h_exports = st.tabs([
+        "💬 Agent 5 Sessions", "🤖 Agent Run Log", "🛡️ Data Snapshots", "📥 Export Log"
+    ])
+
+    # ── Tab 1: Agent 5 Chat Sessions ─────────────────────────────────────
+    with _h_sessions:
+        st.markdown("**Past Agent 5 policy conversations**")
+        try:
+            from agents.agent_analysis import _list_sessions, _load_messages, _delete_session
+            sessions = _list_sessions()
+            if sessions:
+                for sess in sessions:
+                    with st.expander(
+                        f"**{sess['session']}** — {sess.get('summary','')[:80]} "
+                        f"({sess.get('status','?')}) · {sess.get('updated','?')}"
+                    ):
+                        msgs = _load_messages(sess["session"])
+                        st.caption(f"{len(msgs)} messages")
+                        for msg in msgs[-10:]:  # show last 10 messages
+                            role_icon = "🧠" if msg["role"] == "assistant" else "👤"
+                            st.markdown(f"{role_icon} **{msg['role']}**: {msg['content'][:200]}{'...' if len(msg['content'])>200 else ''}")
+                        _dc1, _dc2 = st.columns([3, 1])
+                        with _dc2:
+                            if st.button("🗑 Delete", key=f"hdel_{sess['session']}"):
+                                _delete_session(sess["session"])
+                                st.rerun()
+            else:
+                st.info("No Agent 5 sessions recorded yet. Start a Discovery survey to create one.")
+        except Exception as e:
+            st.warning(f"Could not load sessions: {e}")
+
+    # ── Tab 2: Agent Run Log ─────────────────────────────────────────────
+    with _h_agents:
+        st.markdown("**Agent execution history**")
+
+        # Load persistent timestamps
+        _lr = load_app_state("last_refresh")
+        _a2r = load_app_state("a2_last_run")
+
+        _run_log = []
+        if _lr:
+            _run_log.append({"Agent": "Agent 1 (Sentinel)", "Action": "Lifecycle scan", "Timestamp": _lr, "Status": "Completed"})
+        if _a2r:
+            _run_log.append({"Agent": "Agent 2 (Advisor)", "Action": "AI recommendations", "Timestamp": _a2r, "Status": "Completed"})
+
+        # Agent 3 info
+        _last_r = st.session_state.get("last_refresh")
+        if _last_r:
+            _run_log.append({"Agent": "Agent 3 (Watchdog)", "Action": "Refresh check",
+                             "Timestamp": _last_r.isoformat() if hasattr(_last_r, 'isoformat') else str(_last_r),
+                             "Status": "DUE" if refresh_agent.is_refresh_due(_last_r) else "OK"})
+
+        # Agent 4 snapshots
+        _hist = VersionGuardianAgent.get_history()
+        if _hist:
+            for h in _hist:
+                _run_log.append({"Agent": "Agent 4 (Guardian)", "Action": f"Snapshot {h.get('label','')}",
+                                 "Timestamp": h.get("label",""), "Status": "Stored"})
+
+        # Agent 5 status
+        _a5s = st.session_state.get("a5_status", "idle")
+        _run_log.append({"Agent": "Agent 5 (Strategist)", "Action": f"Status: {_a5s}",
+                         "Timestamp": datetime.now().isoformat(), "Status": _a5s.upper()})
+
+        if _run_log:
+            st.dataframe(pd.DataFrame(_run_log), use_container_width=True, hide_index=True)
+        else:
+            st.info("No agent runs recorded yet.")
+
+        # Changes log from last Agent 1 run
+        if st.session_state.get("changes_log"):
+            with st.expander(f"📋 Last Agent 1 changes ({len(st.session_state.changes_log)} items)"):
+                for c in st.session_state.changes_log:
+                    st.markdown(f"- {c}")
+
+    # ── Tab 3: Data Snapshots (Agent 4) ──────────────────────────────────
+    with _h_snapshots:
+        st.markdown("**Version snapshots taken before each data refresh**")
+        history = VersionGuardianAgent.get_history()
+        if history:
+            for snap in history:
+                with st.expander(f"📸 {snap.get('label', 'Snapshot')} — "
+                                 f"OS: {snap.get('os_count',0)} · DB: {snap.get('db_count',0)}"):
+                    changes = snap.get("changes", [])
+                    if changes:
+                        st.markdown(f"**{len(changes)} changes detected:**")
+                        for c in changes[:10]:
+                            st.markdown(f"- {c}")
+                        if len(changes) > 10:
+                            st.caption(f"... and {len(changes)-10} more")
+                    else:
+                        st.caption("No changes recorded in this snapshot")
+
+                    # Show data preview
+                    _os_snap = snap.get("os_df")
+                    _db_snap = snap.get("db_df")
+                    if _os_snap is not None and not _os_snap.empty:
+                        st.caption(f"OS data preview ({len(_os_snap)} rows)")
+                        st.dataframe(_os_snap.head(5), use_container_width=True, hide_index=True, height=200)
+                    if _db_snap is not None and not _db_snap.empty:
+                        st.caption(f"DB data preview ({len(_db_snap)} rows)")
+                        st.dataframe(_db_snap.head(5), use_container_width=True, hide_index=True, height=200)
+        else:
+            st.info("No snapshots yet. Agent 4 creates snapshots before each Agent 1 refresh run.")
+
+    # ── Tab 4: Export Log ────────────────────────────────────────────────
+    with _h_exports:
+        st.markdown("**Export activity**")
+        _export_log = load_app_state("export_log")
+        if _export_log and isinstance(_export_log, list):
+            st.dataframe(pd.DataFrame(_export_log), use_container_width=True, hide_index=True)
+        else:
+            st.info("No exports logged yet. Downloads from Version Lifecycle page will appear here.")
+
+        st.caption("Note: Exports are generated on-demand. This log tracks when they were created.")
+
 elif _cur_page != "Discovery":
     # Placeholder pages for other navigation items
     st.markdown(f"""
@@ -1202,8 +1342,8 @@ elif _cur_page != "Discovery":
         <div style="font-size:3rem;margin-bottom:1rem;">🚧</div>
         <h2 style="color:#1E293B;">{_cur_page}</h2>
         <p style="color:#64748B;font-size:1rem;">
-            This module is coming soon. Currently, <strong>Discovery</strong> and
-            <strong>Version Lifecycle</strong> are fully operational.
+            This module is coming soon. Currently, <strong>Discovery</strong>,
+            <strong>Version Lifecycle</strong>, and <strong>History</strong> are fully operational.
         </p>
     </div>
     """, unsafe_allow_html=True)
@@ -3167,12 +3307,13 @@ if st.session_state.get("current_page", "Discovery") != "Discovery":
         )
         fname = f"INFY_Version_Tracker_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
         os_n, db_n = len(st.session_state.os_df), len(st.session_state.db_df)
-        st.download_button(
+        if st.download_button(
             label=f"📥 Download Excel — OS: {os_n} · DB: {db_n} entries",
             data=excel_bytes, file_name=fname,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             width="stretch", type="primary"
-        )
+        ):
+            _log_export("Excel", fname)
         st.caption(f"📁 {fname}")
 
     with dl_col2:
@@ -3183,12 +3324,13 @@ if st.session_state.get("current_page", "Discovery") != "Discovery":
                 principles=st.session_state.get("a5_principles", []),
             )
             pdf_fname = f"INFY_Executive_Report_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
-            st.download_button(
+            if st.download_button(
                 label=f"📄 Download PDF Executive Report",
                 data=pdf_bytes, file_name=pdf_fname,
                 mime="application/pdf",
                 width="stretch"
-            )
+            ):
+                _log_export("PDF", pdf_fname)
             st.caption(f"📄 {pdf_fname}")
         except Exception:
             st.caption("PDF export requires fpdf2: `pip install fpdf2`")
