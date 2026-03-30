@@ -420,7 +420,20 @@ with st.sidebar:
     </style>
     """, unsafe_allow_html=True)
 
-    # ── AI Advisor button (always visible at top of sidebar) ─────────────────
+    st.divider()
+
+    # ── API Key (compact) ─────────────────────────────────────────────────────
+    with st.expander("🔑 API Key", expanded=False):
+        api_key = st.text_input("OpenAI API key", type="password", placeholder="sk-...",
+                                 help="Set OPENAI_API_KEY in Streamlit Cloud Secrets.")
+        if not api_key:
+            try: api_key = st.secrets["OPENAI_API_KEY"]
+            except Exception: pass
+        key_ok = bool(api_key and api_key.startswith("sk-"))
+        if api_key and not key_ok: st.error("Key must start with sk-")
+        elif key_ok: st.success("API key ready")
+
+    # ── AI Advisor button (below API key, above navigation) ──────────────────
     _sb_chat_open = st.session_state.get("show_chat", False)
     _sb_a5s = st.session_state.get("a5_status", "idle")
     if _sb_chat_open:
@@ -451,18 +464,6 @@ with st.sidebar:
             except Exception:
                 pass
             st.rerun()
-    st.divider()
-
-    # ── API Key (compact) ─────────────────────────────────────────────────────
-    with st.expander("🔑 API Key", expanded=False):
-        api_key = st.text_input("OpenAI API key", type="password", placeholder="sk-...",
-                                 help="Set OPENAI_API_KEY in Streamlit Cloud Secrets.")
-        if not api_key:
-            try: api_key = st.secrets["OPENAI_API_KEY"]
-            except Exception: pass
-        key_ok = bool(api_key and api_key.startswith("sk-"))
-        if api_key and not key_ok: st.error("Key must start with sk-")
-        elif key_ok: st.success("API key ready")
 
     # ── Navigation ────────────────────────────────────────────────────────────
     _cur_page = st.session_state.get("current_page", "Discovery")
