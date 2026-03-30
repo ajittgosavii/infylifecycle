@@ -1136,8 +1136,8 @@ if _cur_page == "Discovery":
     gp_cols = st.columns(4)
     _gp_categories = [
         ("☁️", "Cat 1:\nPreferred Cloud", "Cloud target selection\n& OS-to-cloud mapping", "#1E3A8A"),
-        ("⬆️", "Cat 2:\nUpgrade Mandates", "OS & DB upgrade paths\nversion lifecycle rules", "#065F46"),
-        ("🔁", "Cat 2:\nReplacement Mandates", "Web/App/Framework\nEOL replacement rules", "#991B1B"),
+        ("⬆️", "Cat 2a:\nUpgrade Mandates", "OS & DB upgrade paths\nversion lifecycle rules", "#065F46"),
+        ("🔁", "Cat 2b:\nReplacement Mandates", "Web/App/Framework\nEOL replacement rules", "#991B1B"),
         ("📋", "Cat 3:\nPrinciples & Costs", "Interactive policy,\ncompliance, budgets", "#92400E"),
     ]
     for col, (icon, title, desc, color) in zip(gp_cols, _gp_categories):
@@ -1702,8 +1702,8 @@ if _show_strategist:
             # ── 4 Category tabs matching the Guiding Principles PDF ──────────
             _t_cloud, _t_upgrade, _t_replace, _t_policy = st.tabs([
                 "☁️ Cat 1: Preferred Cloud",
-                "⬆️ Cat 2: Upgrade Mandates",
-                "🔁 Cat 2: Replacement Mandates",
+                "⬆️ Cat 2a: Upgrade Mandates",
+                "🔁 Cat 2b: Replacement Mandates",
                 "📋 Cat 3: Principles & Costs",
             ])
 
@@ -1765,6 +1765,8 @@ if _show_strategist:
                     with col2:
                         st.markdown(f"**{name}**  \n<small style='color:#4B5563;'>{desc}</small>",
                                     unsafe_allow_html=True)
+                st.divider()
+                st.checkbox("I have reviewed and confirmed the Cloud Target selection", key="tab_done_cloud", value=False)
 
             # ══════════════════════════════════════════════════════════════════
             # CATEGORY 2a: OS & DATABASE UPGRADE MANDATES
@@ -1823,6 +1825,8 @@ if _show_strategist:
                             f"<small style='color:#6B7280;'>{desc}"
                             + (f" — <em>{versions_preview}</em>" if versions_preview else "")
                             + f" ({count} tracked)</small>", unsafe_allow_html=True)
+                st.divider()
+                st.checkbox("I have reviewed and confirmed the Upgrade Mandates", key="tab_done_upgrade", value=False)
 
             # ══════════════════════════════════════════════════════════════════
             # CATEGORY 2b: REPLACEMENT MANDATES (Web/App/Framework)
@@ -1855,6 +1859,8 @@ if _show_strategist:
                 for i, fw in enumerate(fw_names):
                     with (fc1 if i % 2 == 0 else fc2):
                         st.checkbox(fw, value=True, key=f"survey_fw_{fw}")
+                st.divider()
+                st.checkbox("I have reviewed and confirmed the Replacement Mandates", key="tab_done_replace", value=False)
 
             # ══════════════════════════════════════════════════════════════════
             # CATEGORY 3: PRINCIPLES & COSTS (preview)
@@ -1878,11 +1884,28 @@ if _show_strategist:
                     "5. **Final Recommendations** — Cross-referenced with Agent 2's technical analysis\n\n"
                     "*All outputs are exported to Excel, PowerPoint, and PDF.*"
                 )
+                st.divider()
+                st.checkbox("I have reviewed the Principles & Costs overview", key="tab_done_policy", value=False)
 
-            # ── Confirm All ──────────────────────────────────────────────────
+            # ── Confirm All (disabled until all 4 tabs confirmed) ────────────
             st.divider()
+            _all_tabs_done = (
+                st.session_state.get("tab_done_cloud", False) and
+                st.session_state.get("tab_done_upgrade", False) and
+                st.session_state.get("tab_done_replace", False) and
+                st.session_state.get("tab_done_policy", False)
+            )
+            if not _all_tabs_done:
+                _done_count = sum([
+                    st.session_state.get("tab_done_cloud", False),
+                    st.session_state.get("tab_done_upgrade", False),
+                    st.session_state.get("tab_done_replace", False),
+                    st.session_state.get("tab_done_policy", False),
+                ])
+                st.caption(f"Confirmed {_done_count}/4 categories — tick the checkbox at the bottom of each tab to proceed")
             if st.button("✅ Confirm All Categories → Generate Guiding Principles",
-                         type="primary", use_container_width=True, key="survey_confirm"):
+                         type="primary", use_container_width=True, key="survey_confirm",
+                         disabled=not _all_tabs_done):
                 # Collect OS selections
                 os_selected = [fam for fam, _, _ in family_display
                                if st.session_state.get(f"survey_os_{fam}", False) and fam != "Other"]
