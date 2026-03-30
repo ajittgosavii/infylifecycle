@@ -1124,7 +1124,7 @@ if _cur_page == "Discovery":
         st.markdown("""
         <style>
         .ai-float-badge {
-            position: fixed; bottom: 24px; right: 24px; z-index: 9999;
+            position: fixed; bottom: 60px; right: 24px; z-index: 9999;
             background: linear-gradient(135deg,#7C3AED,#9333EA);
             color: white; border-radius: 50px; padding: 12px 20px;
             font-size: 0.85rem; font-weight: 700;
