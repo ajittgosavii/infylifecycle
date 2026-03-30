@@ -1044,16 +1044,28 @@ if _cur_page == "Discovery":
             </div>
             """, unsafe_allow_html=True)
 
-    # ── Flashing floating indicator (bottom-right, always visible) ────────────
+    # ── Floating AI button (bottom-right) — the ONLY open/close control ─────
+    # Uses CSS to style the Streamlit button to look like a floating pill
+    st.markdown("""
+    <style>
+    /* Style the floating chat button */
+    div[data-testid="column"]:last-child div[data-testid="stButton"]:last-child button {
+        border-radius: 50px !important;
+        box-shadow: 0 6px 24px rgba(124,58,237,0.4) !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # Floating visual indicator (non-clickable, just decoration)
     if not _chat_open:
         st.markdown("""
         <style>
-        .floating-chat-trigger {
-            position: fixed; bottom: 30px; right: 30px; z-index: 9998;
+        .floating-indicator {
+            position: fixed; bottom: 28px; right: 28px; z-index: 9998;
             background: linear-gradient(135deg,#7C3AED,#9333EA);
-            color: white; border-radius: 50px; padding: 14px 26px;
-            font-size: 0.95rem; font-weight: 700;
-            display: flex; align-items: center; gap: 10px;
+            color: white; border-radius: 50px; padding: 12px 22px;
+            font-size: 0.9rem; font-weight: 700;
+            display: flex; align-items: center; gap: 8px;
             box-shadow: 0 6px 24px rgba(124,58,237,0.5);
             animation: float-pulse 2s ease-in-out infinite;
             pointer-events: none;
@@ -1062,23 +1074,32 @@ if _cur_page == "Discovery":
             0%, 100% { box-shadow: 0 6px 24px rgba(124,58,237,0.5); }
             50% { box-shadow: 0 6px 36px rgba(124,58,237,0.9), 0 0 60px rgba(124,58,237,0.3); }
         }
-        .float-dot {
-            width: 12px; height: 12px; border-radius: 50%;
-            background: #34D399; animation: fdot 1s infinite;
-        }
+        .float-dot { width: 10px; height: 10px; border-radius: 50%;
+                     background: #34D399; animation: fdot 1s infinite; }
         @keyframes fdot { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
         </style>
-        <div class="floating-chat-trigger">
-            <div class="float-dot"></div>
-            🧠 Start AI Advisor
-        </div>
+        <div class="floating-indicator"><div class="float-dot"></div>🧠 AI Advisor</div>
         """, unsafe_allow_html=True)
 
-    # ── ONE action row: Reset (left) + Open/Close Chat (right) ───────────────
-    _act1, _act2, _act3 = st.columns([1, 4, 1])
-    with _act1:
-        if a5s not in ("idle",):
-            if st.button("🔄 Reset", key="reset_btn", use_container_width=True):
+    # Single action row at bottom — only the floating-style button
+    _sp1, _sp2, _btn_col = st.columns([5, 3, 2])
+    with _btn_col:
+        if _chat_open:
+            if st.button("✕ Close Chat", key="close_chat_btn", use_container_width=True):
+                st.session_state["show_chat"] = False
+                st.rerun()
+        else:
+            if st.button("🧠 AI Advisor", key="open_chat_btn",
+                         use_container_width=True, type="primary"):
+                st.session_state["show_chat"] = True
+                if st.session_state.get("a5_status") in ("idle",):
+                    st.session_state["a5_status"] = "survey"
+                st.rerun()
+
+    # Reset button (only when needed, left-aligned, subtle)
+    if a5s not in ("idle",) and not _chat_open:
+        with _sp1:
+            if st.button("🔄 Start Fresh", key="reset_btn"):
                 for _k in ["a5_status", "a5_landscape_selected", "a5_db_landscape_selected",
                             "a5_context", "a5_principles_table_data", "a5_costed_data",
                             "a5_custom_cloud_profiles", "a5_principles", "a5_costs",
@@ -1093,20 +1114,6 @@ if _cur_page == "Discovery":
                     save_app_state("strategist_survey", {})
                 except Exception:
                     pass
-                st.rerun()
-    with _act3:
-        if _chat_open:
-            if st.button("✕ Close", key="close_chat_btn", use_container_width=True):
-                st.session_state["show_chat"] = False
-                st.rerun()
-        else:
-            if st.button("🧠 Start", key="open_chat_btn",
-                         use_container_width=True, type="primary"):
-                st.session_state["show_chat"] = True
-                # Always start with survey when opening chat
-                _cur_a5 = st.session_state.get("a5_status", "idle")
-                if _cur_a5 in ("idle",):
-                    st.session_state["a5_status"] = "survey"
                 st.rerun()
 
     if not _chat_open:
@@ -1603,20 +1610,8 @@ with tab_fw:
 
 # ────────────────── Strategist Panel (shown on Discovery page) ─────────────────
 if _show_strategist:
-    st.markdown("""
-    <div style="background:linear-gradient(135deg,#1a1a2e,#16213e,#0f3460);
-                padding:1.2rem 1.8rem;border-radius:12px;color:white;margin-bottom:1.5rem;">
-      <h2 style="margin:0;font-size:1.3rem;font-weight:700;">
-        🧠 Agent 5 — Policy Analysis &amp; Migration Intelligence
-      </h2>
-      <p style="margin:4px 0 0;font-size:0.8rem;opacity:0.8;">
-        Project: <strong>1 Apr 2026 → 30 Jun 2028</strong> &nbsp;·&nbsp;
-        Chat with Agent 5 → It collects your policy context → Generates Final Recommendations sheet
-      </p>
-    </div>""", unsafe_allow_html=True)
-
     if not key_ok:
-        st.warning("⚠️ Enter your OpenAI API key in the sidebar (🔑 API Key) to use Agent 5.")
+        st.warning("Enter your OpenAI API key in the sidebar (API Key expander) to use Agent 5.")
     else:
         a5s = st.session_state.get("a5_status", "idle")
 
@@ -1644,22 +1639,7 @@ if _show_strategist:
             as_names = sorted(as_df["App Server"].dropna().unique().tolist())
             fw_names = sorted(fw_df["Framework"].dropna().unique().tolist())
 
-            # ── Chat-style header ────────────────────────────────────────────
-            st.markdown("""
-            <div style="background:linear-gradient(135deg,#0F172A,#1E293B);
-                        border-radius:12px;padding:1rem 1.2rem;margin-bottom:1rem;">
-              <div style="display:flex;align-items:center;gap:10px;">
-                <div class="chat-dot"></div>
-                <span style="color:white;font-weight:700;font-size:1rem;">
-                  🧠 Agent 5 — Discovery Questionnaire
-                </span>
-              </div>
-              <p style="color:#94A3B8;font-size:0.82rem;margin:6px 0 0;">
-                Complete the categories below based on the Guiding Principles framework.
-                Agent 1's baseline data is pre-loaded — confirm what's in your environment.
-              </p>
-            </div>
-            """, unsafe_allow_html=True)
+            st.caption("Complete the categories below. Agent 1's baseline data is pre-loaded — confirm what's in your environment.")
 
             # ── 4 Category tabs matching the Guiding Principles PDF ──────────
             _t_cloud, _t_upgrade, _t_replace, _t_policy = st.tabs([
@@ -1841,18 +1821,8 @@ if _show_strategist:
                     "*All outputs are exported to Excel, PowerPoint, and PDF.*"
                 )
 
-            # ── Confirm All — Single button to consolidate ───────────────────
+            # ── Confirm All ──────────────────────────────────────────────────
             st.divider()
-            st.markdown("""
-            <div style="background:linear-gradient(135deg,#0F172A,#1E293B);
-                        border-radius:8px;padding:0.8rem 1rem;margin-bottom:0.5rem;">
-              <span style="color:#F59E0B;font-weight:700;font-size:0.85rem;">
-                🧠 Agent 5 will consolidate your selections across all categories
-                and generate comprehensive Guiding Principles
-              </span>
-            </div>
-            """, unsafe_allow_html=True)
-
             if st.button("✅ Confirm All Categories → Generate Guiding Principles",
                          type="primary", use_container_width=True, key="survey_confirm"):
                 # Collect OS selections
