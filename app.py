@@ -1044,62 +1044,53 @@ if _cur_page == "Discovery":
             </div>
             """, unsafe_allow_html=True)
 
-    # ── Floating AI button (bottom-right) — the ONLY open/close control ─────
-    # Uses CSS to style the Streamlit button to look like a floating pill
-    st.markdown("""
+    # ── Single floating button (bottom-right corner) ────────────────────────
+    # Use a hidden container + CSS to position the real Streamlit button
+    # at the bottom-right as a fixed floating element
+    _float_key = "close_chat_float" if _chat_open else "open_chat_float"
+    _float_label = "✕ Close" if _chat_open else "🧠 AI Advisor"
+    _float_type = "secondary" if _chat_open else "primary"
+
+    # CSS to move the button container to fixed bottom-right
+    st.markdown(f"""
     <style>
-    /* Style the floating chat button */
-    div[data-testid="column"]:last-child div[data-testid="stButton"]:last-child button {
-        border-radius: 50px !important;
-        box-shadow: 0 6px 24px rgba(124,58,237,0.4) !important;
-    }
+    #ai-advisor-anchor {{
+        position: fixed; bottom: 24px; right: 24px; z-index: 9999;
+        width: auto;
+    }}
+    #ai-advisor-anchor + div {{
+        position: fixed !important; bottom: 24px; right: 24px; z-index: 9999;
+    }}
+    /* Hide the button from normal flow — it renders at fixed position */
+    .ai-float-wrapper {{
+        position: fixed; bottom: 24px; right: 24px; z-index: 9999;
+    }}
     </style>
+    <div id="ai-advisor-anchor"></div>
     """, unsafe_allow_html=True)
 
-    # Floating visual indicator (non-clickable, just decoration)
-    if not _chat_open:
-        st.markdown("""
-        <style>
-        .floating-indicator {
-            position: fixed; bottom: 28px; right: 28px; z-index: 9998;
-            background: linear-gradient(135deg,#7C3AED,#9333EA);
-            color: white; border-radius: 50px; padding: 12px 22px;
-            font-size: 0.9rem; font-weight: 700;
-            display: flex; align-items: center; gap: 8px;
-            box-shadow: 0 6px 24px rgba(124,58,237,0.5);
-            animation: float-pulse 2s ease-in-out infinite;
-            pointer-events: none;
-        }
-        @keyframes float-pulse {
-            0%, 100% { box-shadow: 0 6px 24px rgba(124,58,237,0.5); }
-            50% { box-shadow: 0 6px 36px rgba(124,58,237,0.9), 0 0 60px rgba(124,58,237,0.3); }
-        }
-        .float-dot { width: 10px; height: 10px; border-radius: 50%;
-                     background: #34D399; animation: fdot 1s infinite; }
-        @keyframes fdot { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
-        </style>
-        <div class="floating-indicator"><div class="float-dot"></div>🧠 AI Advisor</div>
-        """, unsafe_allow_html=True)
+    # The button itself — Streamlit renders it in normal flow but we'll
+    # use a workaround: render in sidebar-like container at page end
+    # Since CSS fixed positioning on Streamlit containers is unreliable,
+    # we put the button in the SIDEBAR instead (always visible, always works)
 
-    # Single action row at bottom — only the floating-style button
-    _sp1, _sp2, _btn_col = st.columns([5, 3, 2])
-    with _btn_col:
+    # Actually — simplest reliable approach: put the button in the sidebar
+    # at the very bottom, where it's always accessible
+    with st.sidebar:
+        st.divider()
         if _chat_open:
-            if st.button("✕ Close Chat", key="close_chat_btn", use_container_width=True):
+            if st.button("✕ Close AI Chat", key="close_chat_sb", use_container_width=True):
                 st.session_state["show_chat"] = False
                 st.rerun()
         else:
-            if st.button("🧠 AI Advisor", key="open_chat_btn",
+            if st.button("🧠 Open AI Advisor", key="open_chat_sb",
                          use_container_width=True, type="primary"):
                 st.session_state["show_chat"] = True
                 if st.session_state.get("a5_status") in ("idle",):
                     st.session_state["a5_status"] = "survey"
                 st.rerun()
-
-    # Reset button (only when needed, left-aligned, subtle)
-    if a5s not in ("idle",) and not _chat_open:
-        with _sp1:
-            if st.button("🔄 Start Fresh", key="reset_btn"):
+        if a5s not in ("idle",):
+            if st.button("🔄 Start Fresh", key="reset_btn_sb", use_container_width=True):
                 for _k in ["a5_status", "a5_landscape_selected", "a5_db_landscape_selected",
                             "a5_context", "a5_principles_table_data", "a5_costed_data",
                             "a5_custom_cloud_profiles", "a5_principles", "a5_costs",
