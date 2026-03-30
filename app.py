@@ -1062,9 +1062,7 @@ if _cur_page == "Discovery":
 
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
-    # ── Clickable flowchart navigation (buttons matching main flow boxes) ────
-    # Each button opens chat and jumps to the corresponding phase
-    # Only allows clicking completed steps or the next available step
+    # ── Clickable flowchart navigation (ALL steps always visible) ───────────
     _fc_buttons = [
         ("1a", "survey", 2),
         ("2a", "survey", 2),
@@ -1077,14 +1075,18 @@ if _cur_page == "Discovery":
     _fc_btn_cols = st.columns(len(_fc_buttons))
     for col, (label, target_status, target_ord) in zip(_fc_btn_cols, _fc_buttons):
         with col:
-            # Allow clicking if: step is completed OR is the next step to do
-            _can_click = (_cur_ord >= target_ord) or (target_ord <= _cur_ord + 2)
-            # For idle, only 1a/2a (survey) are clickable
+            # Determine if clickable: completed steps + next available step
             if a5s == "idle":
                 _can_click = target_status == "survey"
-            if _can_click:
-                if st.button(label, key=f"fc_nav_{label}", use_container_width=True,
-                             help=f"Go to step {label}"):
+            else:
+                _can_click = (_cur_ord >= target_ord) or (target_ord <= _cur_ord + 2)
+
+            # Always show button, but disable if not reachable yet
+            if st.button(label, key=f"fc_nav_{label}", use_container_width=True,
+                         help=f"Go to step {label}",
+                         disabled=not _can_click,
+                         type="primary" if _can_click and _cur_ord < target_ord else "secondary"):
+                if _can_click:
                     st.session_state["show_chat"] = True
                     st.session_state["a5_status"] = target_status
                     st.rerun()
