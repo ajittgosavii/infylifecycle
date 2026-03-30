@@ -861,8 +861,10 @@ _show_strategist = (_cur_page == "Discovery" and st.session_state.get("show_chat
 # DISCOVERY PAGE — Flowchart + Guiding Principles + AI Chat
 # ════════════════════════════════════════════════════════════════════════════════
 if _cur_page == "Discovery":
-    # ── Flowchart at top — highlights current Agent 5 step ────────────────────
     a5s = st.session_state.get("a5_status", "idle")
+    _chat_open = st.session_state.get("show_chat", False)
+
+    # ── Flowchart at top (visual indicator of progress) ──────────────────────
     _fc_steps = [
         ("1a", "Preliminary\nGuiding Principles", ["idle", "survey"]),
         ("2a", "Current Landscape\nDiscovery", ["idle", "survey"]),
@@ -874,29 +876,21 @@ if _cur_page == "Discovery":
         ("3b", "Final\nDisposition", ["ready", "analysing"]),
         ("4b", "Final\nWave Planning", ["done"]),
     ]
-
-    # Build flowchart HTML
     _step_map_order = {
-        "idle": 0, "survey": 0,
-        "principles_table": 1,
-        "chatting": 4,
-        "principles": 5,
-        "costing": 6,
-        "ready": 7, "analysing": 7,
-        "done": 8,
+        "idle": 0, "survey": 0, "principles_table": 2,
+        "chatting": 4, "principles": 5, "costing": 6,
+        "ready": 7, "analysing": 7, "done": 8,
     }
+
     _fc_html = "<div class='flowchart-container'>"
     for i, (step_id, label, statuses) in enumerate(_fc_steps):
         cur_order = _step_map_order.get(a5s, 0)
-        step_order = i
-
         if a5s in statuses:
             css_class = "fc-active"
-        elif cur_order > step_order:
+        elif cur_order > i:
             css_class = "fc-done"
         else:
             css_class = "fc-idle"
-
         label_html = label.replace("\n", "<br>")
         _fc_html += f"<div class='fc-block {css_class}' title='Step {step_id}'>"
         _fc_html += f"<div style='font-size:0.65rem;opacity:0.7;margin-bottom:2px;'>{step_id}</div>"
@@ -904,64 +898,11 @@ if _cur_page == "Discovery":
         if i < len(_fc_steps) - 1:
             _fc_html += "<span class='fc-arrow'>→</span>"
     _fc_html += "</div>"
-
-    # Side branch: 2b → 6a
-    _fc_html += """
-    <div style='text-align:center;margin:-10px 0 10px;'>
-        <span style='color:#64748B;font-size:0.72rem;'>
-            2b: Utilization &amp; Characteristics &nbsp;→&nbsp; 6a: Cost Analysis (shown above)
-        </span>
-    </div>
-    """
     st.markdown(_fc_html, unsafe_allow_html=True)
 
-    # ── Clickable flowchart navigation buttons ────────────────────────────────
-    _fc_nav_cols = st.columns(len(_fc_steps))
-    _fc_target_status = [
-        "survey", "survey", "principles_table", "principles_table",
-        "chatting", "principles", "costing", "ready", "done"
-    ]
-    for i, (col, (step_id, label, statuses)) in enumerate(zip(_fc_nav_cols, _fc_steps)):
-        with col:
-            clean_label = label.replace("\n", " ")
-            cur_order = _step_map_order.get(a5s, 0)
-            # Only allow jumping to completed steps or current step
-            can_jump = (i <= cur_order)
-            if can_jump and st.button(f"{step_id}", key=f"fc_jump_{step_id}",
-                                       help=f"Go to: {clean_label}", use_container_width=True):
-                st.session_state.a5_status = _fc_target_status[i]
-                st.rerun()
-
-    # ── Progress stepper bar ────────────────────────────────────────────────────
-    steps    = ["🗺️ OS", "🗄️ DB", "☁️ Cloud", "📋 Principles & Costs", "💬 Policy Chat", "⚖️ GP Generate", "💰 Cost Intel", "🧠 Analysis", "✅ Done"]
-    step_map = {"idle":0,"survey":0,
-                "principles_table":3,
-                "chatting":4,"principles":5,"costing":6,
-                "ready":6,"analysing":7,"done":8}
-    cur_step = step_map.get(a5s, 0)
-
-    # For "survey" state, OS/DB/Cloud (steps 0-2) are all being worked on simultaneously
-    # Show them as active (yellow), not done
-    _survey_active = a5s in ("idle", "survey")
-
-    s_cols = st.columns(len(steps))
-    for i, (col, lbl) in enumerate(zip(s_cols, steps)):
-        with col:
-            if _survey_active and i <= 2:
-                # During survey, OS/DB/Cloud are all active
-                st.markdown(f"<div style='text-align:center;color:#F59E0B;font-weight:700;font-size:0.8rem;'>● {lbl}</div>", unsafe_allow_html=True)
-            elif _survey_active and i > 2:
-                # Everything after Cloud is pending during survey
-                st.markdown(f"<div style='text-align:center;color:#94A3B8;font-size:0.8rem;'>○ {lbl}</div>", unsafe_allow_html=True)
-            elif i < cur_step:
-                st.markdown(f"<div style='text-align:center;color:#10B981;font-size:0.8rem;'>✅ {lbl}</div>", unsafe_allow_html=True)
-            elif i == cur_step:
-                st.markdown(f"<div style='text-align:center;color:#F59E0B;font-weight:700;font-size:0.8rem;'>● {lbl}</div>", unsafe_allow_html=True)
-            else:
-                st.markdown(f"<div style='text-align:center;color:#94A3B8;font-size:0.8rem;'>○ {lbl}</div>", unsafe_allow_html=True)
     st.divider()
 
-    # ── Guiding Principles — 5 Category Cards (center) ────────────────────────
+    # ── Guiding Principles — 5 Category Cards ────────────────────────────────
     st.markdown("""
     <div style="text-align:center;margin-bottom:1rem;">
         <h2 style="color:#1E293B;margin:0;">Guiding Principles</h2>
@@ -979,7 +920,6 @@ if _cur_page == "Discovery":
         ("🌐", "Web/App\nServers", "Web & app server\nlifecycle strategy", "#F59E0B"),
         ("📦", "Framework\nTypes", "Runtime & framework\nversion management", "#EF4444"),
     ]
-
     for col, (icon, title, desc, color) in zip(gp_cols, _gp_categories):
         with col:
             title_html = title.replace("\n", "<br>")
@@ -992,65 +932,67 @@ if _cur_page == "Discovery":
             </div>
             """, unsafe_allow_html=True)
 
-    st.markdown("<br>", unsafe_allow_html=True)
+    # ── Flashing floating indicator (bottom-right, always visible) ────────────
+    if not _chat_open:
+        st.markdown("""
+        <style>
+        .floating-chat-trigger {
+            position: fixed; bottom: 30px; right: 30px; z-index: 9998;
+            background: linear-gradient(135deg,#7C3AED,#9333EA);
+            color: white; border-radius: 50px; padding: 14px 26px;
+            font-size: 0.95rem; font-weight: 700;
+            display: flex; align-items: center; gap: 10px;
+            box-shadow: 0 6px 24px rgba(124,58,237,0.5);
+            animation: float-pulse 2s ease-in-out infinite;
+            pointer-events: none;
+        }
+        @keyframes float-pulse {
+            0%, 100% { box-shadow: 0 6px 24px rgba(124,58,237,0.5); }
+            50% { box-shadow: 0 6px 36px rgba(124,58,237,0.9), 0 0 60px rgba(124,58,237,0.3); }
+        }
+        .float-dot {
+            width: 12px; height: 12px; border-radius: 50%;
+            background: #34D399; animation: fdot 1s infinite;
+        }
+        @keyframes fdot { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
+        </style>
+        <div class="floating-chat-trigger">
+            <div class="float-dot"></div>
+            🧠 Start AI Advisor
+        </div>
+        """, unsafe_allow_html=True)
 
-    # ── Floating AI Chat Button (bottom-right corner, always visible) ────────
-    _chat_open = st.session_state.get("show_chat", False)
-
-    # Always show the flashing fixed-position floating button in bottom-right
-    _float_text = "✕ Close Chat" if _chat_open else "🧠 Start AI Advisor"
-    _float_bg = "linear-gradient(135deg,#DC2626,#EF4444)" if _chat_open else "linear-gradient(135deg,#7C3AED,#9333EA)"
-    _float_anim = "" if _chat_open else "animation: float-pulse 2s ease-in-out infinite;"
-    st.markdown(f"""
-    <style>
-    .floating-chat-trigger {{
-        position: fixed; bottom: 30px; right: 30px; z-index: 9999;
-        background: {_float_bg};
-        color: white; border-radius: 50px; padding: 14px 26px;
-        font-size: 0.95rem; font-weight: 700;
-        display: flex; align-items: center; gap: 10px;
-        box-shadow: 0 6px 24px rgba(124,58,237,0.5);
-        {_float_anim}
-        pointer-events: none;
-    }}
-    @keyframes float-pulse {{
-        0%, 100% {{ box-shadow: 0 6px 24px rgba(124,58,237,0.5); }}
-        50% {{ box-shadow: 0 6px 36px rgba(124,58,237,0.9), 0 0 60px rgba(124,58,237,0.3); }}
-    }}
-    .float-dot {{
-        width: 12px; height: 12px; border-radius: 50%;
-        background: #34D399; animation: fdot 1s infinite;
-    }}
-    @keyframes fdot {{ 0%,100%{{opacity:1;}} 50%{{opacity:0.3;}} }}
-    </style>
-    <div class="floating-chat-trigger">
-        <div class="float-dot"></div>
-        {_float_text}
-    </div>
-    """, unsafe_allow_html=True)
-
-    # Real Streamlit toggle button (always visible, below the GP cards)
-    _btn_col1, _btn_col2, _btn_col3 = st.columns([2, 2, 2])
-    with _btn_col3:
-        _btn_label = "✕ Close AI Chat" if _chat_open else "🧠 Open AI Advisor"
-        if st.button(_btn_label, key="toggle_chat_btn",
-                     use_container_width=True,
-                     type="secondary" if _chat_open else "primary"):
-            st.session_state["show_chat"] = not _chat_open
-            # If opening fresh, reset to survey state
-            if not _chat_open:
+    # ── ONE action row: Reset (left) + Open/Close Chat (right) ───────────────
+    _act1, _act2, _act3 = st.columns([1, 4, 1])
+    with _act1:
+        if a5s not in ("idle",):
+            if st.button("🔄 Reset", key="reset_btn", use_container_width=True):
+                for _k in ["a5_status", "a5_landscape_selected", "a5_db_landscape_selected",
+                            "a5_context", "a5_principles_table_data", "a5_costed_data",
+                            "a5_custom_cloud_profiles", "a5_principles", "a5_costs",
+                            "a5_preflight_done", "a5_os_done", "a5_db_done",
+                            "a5_ws_done", "a5_as_done", "a5_fw_done",
+                            "a5_session_id", "a5_opening_pending", "a5_log",
+                            "show_chat", "show_strategist"]:
+                    st.session_state.pop(_k, None)
+                st.session_state["a5_status"] = "idle"
+                st.session_state["show_chat"] = False
+                try:
+                    save_app_state("strategist_survey", {})
+                except Exception:
+                    pass
+                st.rerun()
+    with _act3:
+        if _chat_open:
+            if st.button("✕ Close", key="close_chat_btn", use_container_width=True):
+                st.session_state["show_chat"] = False
+                st.rerun()
+        else:
+            if st.button("🧠 Start", key="open_chat_btn",
+                         use_container_width=True, type="primary"):
+                st.session_state["show_chat"] = True
                 if st.session_state.get("a5_status") == "idle":
                     st.session_state["a5_status"] = "survey"
-            st.rerun()
-
-    # If user has prior session, show a reset option
-    if a5s not in ("idle", "survey") and not _chat_open:
-        with _btn_col1:
-            if st.button("🔄 Start Fresh", key="reset_session_btn", use_container_width=True):
-                PolicyAnalysisAgent.reset()
-                st.session_state["show_chat"] = False
-                st.session_state.pop("a5_principles_table_data", None)
-                st.session_state.pop("a5_costed_data", None)
                 st.rerun()
 
     if not _chat_open:
@@ -1547,6 +1489,13 @@ with tab_fw:
 
 # ────────────────── Strategist Panel (shown on Discovery page) ─────────────────
 if _show_strategist:
+    # Close button at top of chat panel
+    _close_col1, _close_col2 = st.columns([5, 1])
+    with _close_col2:
+        if st.button("✕ Close", key="close_chat_top", use_container_width=True):
+            st.session_state["show_chat"] = False
+            st.rerun()
+
     st.markdown("""
     <div style="background:linear-gradient(135deg,#1a1a2e,#16213e,#0f3460);
                 padding:1.2rem 1.8rem;border-radius:12px;color:white;margin-bottom:1.5rem;">
