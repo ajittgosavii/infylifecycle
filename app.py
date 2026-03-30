@@ -302,7 +302,7 @@ PolicyAnalysisAgent.init_session()
 _strategist_keys = [
     "a5_status", "a5_landscape_selected", "a5_db_landscape_selected",
     "a5_context", "a5_principles_table_data", "a5_costed_data",
-    "a5_custom_cloud_profiles",
+    "a5_custom_cloud_profiles", "show_chat",
 ]
 if st.session_state.get("a5_status") == "idle":
     saved_a5 = load_app_state("strategist_survey")
@@ -316,6 +316,9 @@ if st.session_state.get("a5_status") == "idle":
         _has_landscape = bool(st.session_state.get("a5_landscape_selected"))
         if _restored_status not in ("idle", "survey") and not _has_landscape:
             st.session_state["a5_status"] = "idle"
+        # Auto-open chat if session was restored to an active state
+        elif _restored_status not in ("idle",):
+            st.session_state["show_chat"] = True
 
 
 def _save_strategist_state():
