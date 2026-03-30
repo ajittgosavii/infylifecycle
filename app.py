@@ -1179,8 +1179,12 @@ if _cur_page != "Version Lifecycle":
         "📊 Dashboard", "🖥️ OS Versions", "🗄️ DB Versions",
         "🌐 Web & App Servers", "📦 Frameworks",
     ])
-    # Hide these tabs with CSS — they exist only to avoid NameError
-    st.markdown("<style>.stTabs{display:none!important;}</style>", unsafe_allow_html=True)
+    # Hide the lifecycle tabs but NOT the survey category tabs
+    # The lifecycle tabs render AFTER the Discovery content, so they're the last .stTabs
+    st.markdown("""<style>
+    /* Hide lifecycle Dashboard/OS/DB tabs when not on Version Lifecycle page */
+    .main .stTabs:last-of-type { display: none !important; }
+    </style>""", unsafe_allow_html=True)
 
 
 # ────────────────── Tab 0: Executive Dashboard ────────────────────────────────
