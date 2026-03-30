@@ -1765,6 +1765,53 @@ if _show_strategist:
                     with col2:
                         st.markdown(f"**{name}**  \n<small style='color:#4B5563;'>{desc}</small>",
                                     unsafe_allow_html=True)
+                # ── "Other" Cloud handling ────────────────────────────────
+                st.divider()
+                st.markdown("**Other Cloud Provider?**")
+                _other_cloud_name = st.text_input(
+                    "Cloud provider not listed above",
+                    placeholder="e.g. IBM Cloud, Alibaba Cloud, VMware on-prem, Hybrid multi-cloud...",
+                    key="survey_other_cloud_input"
+                )
+                if _other_cloud_name:
+                    if st.button("🔍 Research & Add Cloud Profile", key="add_other_cloud", type="primary"):
+                        with st.spinner(f"🧠 Agent 5 researching {_other_cloud_name}..."):
+                            try:
+                                agent5 = PolicyAnalysisAgent(api_key=api_key)
+                                resp = agent5.client.chat.completions.create(
+                                    model=agent5.model, max_tokens=400,
+                                    messages=[{"role": "user", "content":
+                                        f"Create a brief cloud migration profile for: {_other_cloud_name}\n\n"
+                                        f"Return ONLY JSON:\n"
+                                        f'{{"name": "short profile name", '
+                                        f'"emoji": "single emoji", '
+                                        f'"description": "2-sentence description of strengths for OS migration", '
+                                        f'"key": "short_key"}}'
+                                    }])
+                                text = resp.choices[0].message.content.strip()
+                                if "```" in text:
+                                    text = text.split("```json")[-1].split("```")[0] if "```json" in text \
+                                           else text.split("```")[1].split("```")[0]
+                                s, e = text.find("{"), text.rfind("}")
+                                profile = json.loads(text[s:e+1]) if s != -1 and e > s else None
+                            except Exception:
+                                profile = None
+
+                        if profile:
+                            new_profile = (
+                                profile.get("name", _other_cloud_name),
+                                profile.get("emoji", "☁️"),
+                                profile.get("description", f"Custom profile for {_other_cloud_name}"),
+                                profile.get("key", _other_cloud_name.lower().replace(" ", "_"))
+                            )
+                            custom = st.session_state.get("a5_custom_cloud_profiles", [])
+                            custom.append(new_profile)
+                            st.session_state.a5_custom_cloud_profiles = custom
+                            st.success(f"✅ **{new_profile[0]}** profile added! Select it above.")
+                            st.rerun()
+                        else:
+                            st.error("Could not generate profile. Try a more specific cloud name.")
+
                 st.divider()
                 st.checkbox("I have reviewed and confirmed the Cloud Target selection", key="tab_done_cloud", value=False)
 
