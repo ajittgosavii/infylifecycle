@@ -3514,6 +3514,9 @@ if _show_downloads:
                 st.session_state.os_df,
                 st.session_state.db_df,
                 principles=st.session_state.get("a5_principles", []),
+                costs=st.session_state.get("a5_costs", {}),
+                gp_table=st.session_state.get("a5_principles_table_data"),
+                costed_data=st.session_state.get("a5_costed_data"),
             )
             pdf_fname = f"INFY_Executive_Report_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
             if st.download_button(
@@ -3526,6 +3529,32 @@ if _show_downloads:
             st.caption(f"📄 {pdf_fname}")
         except Exception:
             st.caption("PDF export requires fpdf2: `pip install fpdf2`")
+
+    # PPTX download (if GP data available)
+    _pptx_gp = st.session_state.get("a5_principles_table_data")
+    if _pptx_gp and _show_downloads:
+        from agents.agent_analysis import generate_pptx, assign_migration_waves
+        from agents.agent_analysis import generate_compliance_crosswalk, generate_dependency_map
+        try:
+            _pptx_waves = assign_migration_waves(
+                _pptx_gp, os_df=st.session_state.os_df, db_df=st.session_state.db_df,
+                ws_df=st.session_state.ws_df, as_df=st.session_state.as_df,
+                fw_df=st.session_state.fw_df)
+            _pptx_comp = generate_compliance_crosswalk(_pptx_waves)
+            _pptx_deps = generate_dependency_map(_pptx_gp)
+            _cloud_name = st.session_state.get("a5_context", {}).get("cloud_provider", "")
+            _sel_fams = st.session_state.get("a5_landscape_selected", [])
+            pptx_bytes = generate_pptx(_pptx_gp, _pptx_waves, _pptx_comp, _pptx_deps,
+                                        _cloud_name, _sel_fams)
+            pptx_fname = f"INFY_Migration_Strategy_{datetime.now().strftime('%Y%m%d_%H%M')}.pptx"
+            st.download_button(
+                label=f"📊 Download PowerPoint Deck",
+                data=pptx_bytes, file_name=pptx_fname,
+                mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                width="stretch"
+            )
+        except Exception:
+            pass
 
 st.markdown(
     "<p style='text-align:center;color:#94A3B8;font-size:0.72rem;margin-top:1.5rem;'>"
