@@ -2987,46 +2987,47 @@ try:
 except Exception:
     pass
 
-# ── Downloads ──────────────────────────────────────────────────────────────────
-st.divider()
-dl_col1, dl_col2 = st.columns(2)
-with dl_col1:
-    ts_str = datetime.now().strftime("%d %b %Y %H:%M UTC")
-    excel_bytes = export_to_excel(
-        st.session_state.os_df,
-        st.session_state.db_df,
-        generated_at=ts_str,
-        principles=st.session_state.get("a5_principles", []),
-        costs=st.session_state.get("a5_costs", {}),
-        version_history=VersionGuardianAgent.get_history()
-    )
-    fname = f"INFY_Version_Tracker_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
-    os_n, db_n = len(st.session_state.os_df), len(st.session_state.db_df)
-    st.download_button(
-        label=f"📥 Download Excel — OS: {os_n} · DB: {db_n} entries",
-        data=excel_bytes, file_name=fname,
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        width="stretch", type="primary"
-    )
-    st.caption(f"📁 {fname}")
-
-with dl_col2:
-    try:
-        pdf_bytes = generate_pdf_report(
+# ── Downloads (only on Version Lifecycle page, not Discovery landing) ─────────
+if st.session_state.get("current_page", "Discovery") != "Discovery":
+    st.divider()
+    dl_col1, dl_col2 = st.columns(2)
+    with dl_col1:
+        ts_str = datetime.now().strftime("%d %b %Y %H:%M UTC")
+        excel_bytes = export_to_excel(
             st.session_state.os_df,
             st.session_state.db_df,
+            generated_at=ts_str,
             principles=st.session_state.get("a5_principles", []),
+            costs=st.session_state.get("a5_costs", {}),
+            version_history=VersionGuardianAgent.get_history()
         )
-        pdf_fname = f"INFY_Executive_Report_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
+        fname = f"INFY_Version_Tracker_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
+        os_n, db_n = len(st.session_state.os_df), len(st.session_state.db_df)
         st.download_button(
-            label=f"📄 Download PDF Executive Report",
-            data=pdf_bytes, file_name=pdf_fname,
-            mime="application/pdf",
-            width="stretch"
+            label=f"📥 Download Excel — OS: {os_n} · DB: {db_n} entries",
+            data=excel_bytes, file_name=fname,
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            width="stretch", type="primary"
         )
-        st.caption(f"📄 {pdf_fname}")
-    except Exception:
-        st.caption("PDF export requires fpdf2: `pip install fpdf2`")
+        st.caption(f"📁 {fname}")
+
+    with dl_col2:
+        try:
+            pdf_bytes = generate_pdf_report(
+                st.session_state.os_df,
+                st.session_state.db_df,
+                principles=st.session_state.get("a5_principles", []),
+            )
+            pdf_fname = f"INFY_Executive_Report_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
+            st.download_button(
+                label=f"📄 Download PDF Executive Report",
+                data=pdf_bytes, file_name=pdf_fname,
+                mime="application/pdf",
+                width="stretch"
+            )
+            st.caption(f"📄 {pdf_fname}")
+        except Exception:
+            st.caption("PDF export requires fpdf2: `pip install fpdf2`")
 
 st.markdown(
     "<p style='text-align:center;color:#94A3B8;font-size:0.72rem;margin-top:1.5rem;'>"
