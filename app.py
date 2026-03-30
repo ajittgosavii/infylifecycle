@@ -3776,10 +3776,11 @@ try:
 except Exception:
     pass
 
-# ── Downloads (Version Lifecycle page OR Discovery when Agent 5 is done) ──────
+# ── Downloads (only on specific pages, not on every sidebar page) ─────────
+_dl_page = st.session_state.get("current_page", "Discovery")
 _show_downloads = (
-    st.session_state.get("current_page", "Discovery") != "Discovery"
-    or st.session_state.get("a5_status") == "done"
+    _dl_page in ("Version Lifecycle", "History")
+    or (_dl_page == "Discovery" and st.session_state.get("a5_status") == "done")
 )
 if _show_downloads:
     st.divider()
@@ -3824,8 +3825,10 @@ if _show_downloads:
             ):
                 _log_export("PDF", pdf_fname)
             st.caption(f"📄 {pdf_fname}")
-        except Exception:
-            st.caption("PDF export requires fpdf2: `pip install fpdf2`")
+        except ImportError:
+            st.caption("PDF export requires fpdf2 — run: `pip install fpdf2`")
+        except Exception as _pdf_err:
+            st.caption(f"PDF generation error: {str(_pdf_err)[:60]}")
 
     # PPTX download (if GP data available)
     _pptx_gp = st.session_state.get("a5_principles_table_data")
