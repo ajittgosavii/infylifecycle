@@ -1062,6 +1062,33 @@ if _cur_page == "Discovery":
 
     st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
+    # ── Clickable flowchart navigation (buttons matching main flow boxes) ────
+    # Each button opens chat and jumps to the corresponding phase
+    # Only allows clicking completed steps or the next available step
+    _fc_buttons = [
+        ("1a", "survey", 2),
+        ("2a", "survey", 2),
+        ("3a", "principles_table", 4),
+        ("5",  "chatting", 6),
+        ("1b", "principles", 7),
+        ("3b", "ready", 9),
+        ("4b", "done", 11),
+    ]
+    _fc_btn_cols = st.columns(len(_fc_buttons))
+    for col, (label, target_status, target_ord) in zip(_fc_btn_cols, _fc_buttons):
+        with col:
+            # Allow clicking if: step is completed OR is the next step to do
+            _can_click = (_cur_ord >= target_ord) or (target_ord <= _cur_ord + 2)
+            # For idle, only 1a/2a (survey) are clickable
+            if a5s == "idle":
+                _can_click = target_status == "survey"
+            if _can_click:
+                if st.button(label, key=f"fc_nav_{label}", use_container_width=True,
+                             help=f"Go to step {label}"):
+                    st.session_state["show_chat"] = True
+                    st.session_state["a5_status"] = target_status
+                    st.rerun()
+
     # ── Step-by-step guide banner ────────────────────────────────────────────
     _guide_messages = {
         "idle":             ("1", "Get Started", "Click <b>'Open AI Advisor'</b> in the sidebar to begin. The flowchart will light up as you progress.", "#3B82F6", "👆"),
