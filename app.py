@@ -912,13 +912,12 @@ if _cur_page == "Discovery":
     </div>
     """, unsafe_allow_html=True)
 
-    gp_cols = st.columns(5)
+    gp_cols = st.columns(4)
     _gp_categories = [
-        ("🖥️", "Operating\nSystem", "OS migration paths,\nupgrade policies", "#3B82F6"),
-        ("☁️", "Cloud\nSelection", "Target cloud provider\n& deployment model", "#10B981"),
-        ("🗄️", "Database\nTypes", "DB modernization\n& EOL handling", "#8B5CF6"),
-        ("🌐", "Web/App\nServers", "Web & app server\nlifecycle strategy", "#F59E0B"),
-        ("📦", "Framework\nTypes", "Runtime & framework\nversion management", "#EF4444"),
+        ("☁️", "Cat 1:\nPreferred Cloud", "Cloud target selection\n& OS-to-cloud mapping", "#1E3A8A"),
+        ("⬆️", "Cat 2:\nUpgrade Mandates", "OS & DB upgrade paths\nversion lifecycle rules", "#065F46"),
+        ("🔁", "Cat 2:\nReplacement Mandates", "Web/App/Framework\nEOL replacement rules", "#991B1B"),
+        ("📋", "Cat 3:\nPrinciples & Costs", "Interactive policy,\ncompliance, budgets", "#92400E"),
     ]
     for col, (icon, title, desc, color) in zip(gp_cols, _gp_categories):
         with col:
@@ -1508,7 +1507,7 @@ if _show_strategist:
     else:
         a5s = st.session_state.get("a5_status", "idle")
 
-        # ── PHASE 0: UNIFIED SURVEY (OS + DB + Cloud + Web/App + Framework) ────
+        # ── PHASE 0: DISCOVERY SURVEY (PDF Categories 1-3) ─────────────────────
         if a5s in ("idle", "survey"):
             from agents.agent_analysis import categorize_os_families, get_family_display
             from agents.agent_analysis import categorize_db_families, get_db_family_display
@@ -1522,34 +1521,114 @@ if _show_strategist:
             st.session_state.a5_landscape_families = os_families
             db_families = categorize_db_families(st.session_state.db_df)
             st.session_state.a5_db_landscape_families = db_families
+            family_display = get_family_display()
+            db_family_display = get_db_family_display()
 
-            # ── Chat-style container with embedded survey tabs ────────────────
+            ws_df = st.session_state.ws_df
+            as_df = st.session_state.as_df
+            fw_df = st.session_state.fw_df
+            ws_names = sorted(ws_df["Web Server"].dropna().unique().tolist())
+            as_names = sorted(as_df["App Server"].dropna().unique().tolist())
+            fw_names = sorted(fw_df["Framework"].dropna().unique().tolist())
+
+            # ── Chat-style header ────────────────────────────────────────────
             st.markdown("""
             <div style="background:linear-gradient(135deg,#0F172A,#1E293B);
                         border-radius:12px;padding:1rem 1.2rem;margin-bottom:1rem;">
               <div style="display:flex;align-items:center;gap:10px;">
                 <div class="chat-dot"></div>
                 <span style="color:white;font-weight:700;font-size:1rem;">
-                  🧠 Agent 5 — Landscape Discovery
+                  🧠 Agent 5 — Discovery Questionnaire
                 </span>
               </div>
               <p style="color:#94A3B8;font-size:0.82rem;margin:6px 0 0;">
-                Please review and confirm your IT landscape across all 5 categories below.
-                Tick the technologies present in your environment, then confirm to generate Guiding Principles.
+                Complete the categories below based on the Guiding Principles framework.
+                Agent 1's baseline data is pre-loaded — confirm what's in your environment.
               </p>
             </div>
             """, unsafe_allow_html=True)
 
-            # 5 Survey tabs inside the chat
-            _st_os, _st_db, _st_cloud, _st_ws, _st_fw = st.tabs([
-                "🖥️ OS Families", "🗄️ Database Families", "☁️ Cloud Target",
-                "🌐 Web/App Servers", "📦 Frameworks",
+            # ── 4 Category tabs matching the Guiding Principles PDF ──────────
+            _t_cloud, _t_upgrade, _t_replace, _t_policy = st.tabs([
+                "☁️ Cat 1: Preferred Cloud",
+                "⬆️ Cat 2: Upgrade Mandates",
+                "🔁 Cat 2: Replacement Mandates",
+                "📋 Cat 3: Principles & Costs",
             ])
 
-            # ── TAB 1: OS Families ────────────────────────────────────────────
-            with _st_os:
-                st.markdown(f"**🖥️ OS Landscape** — {len([f for f in os_families if f != 'Other'])} families detected")
-                family_display = get_family_display()
+            # ══════════════════════════════════════════════════════════════════
+            # CATEGORY 1: PREFERRED CLOUD PROVIDER
+            # ══════════════════════════════════════════════════════════════════
+            with _t_cloud:
+                st.markdown("""
+                <div style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:8px;
+                            padding:0.8rem 1rem;margin-bottom:0.8rem;">
+                  <h4 style="margin:0;color:#1E3A8A;">Category 1: Preferred Cloud Provider</h4>
+                  <small style="color:#64748B;">Select the cloud profile that best matches your target.
+                  This determines upgrade paths and replacement targets for all technologies.</small>
+                </div>""", unsafe_allow_html=True)
+
+                CLOUD_PROFILES = [
+                    ("Microsoft-Centric (Azure)", "🔷",
+                     "Windows Server (2012-2025), Active Directory, Azure Hybrid Benefit, SQL Server on Azure",
+                     "Azure"),
+                    ("Linux & Scale (AWS)", "🟠",
+                     "RHEL/RPM-based footprints, Graviton ARM, 40% better price-performance on modern Linux",
+                     "AWS"),
+                    ("Container & Data (GCP)", "🔵",
+                     "Ubuntu/Debian, Kubernetes (GKE), AI data pipelines, global private fiber",
+                     "GCP"),
+                    ("Database & Legacy Bridge (Oracle/OCI)", "🔴",
+                     "Oracle Linux, Solaris, Oracle Database backends, most stable legacy path",
+                     "OCI"),
+                    ("Sovereign-First (US Gov / High-Reg)", "🛡️",
+                     "FedRAMP High, ITAR, CJIS — vendor-agnostic, compliance-driven",
+                     "GovCloud"),
+                ]
+                custom_profiles = st.session_state.get("a5_custom_cloud_profiles", [])
+                all_profiles = CLOUD_PROFILES + custom_profiles
+
+                # Cloud-to-OS mapping table
+                st.markdown("""
+                <table style='width:100%;border-collapse:collapse;font-size:0.82rem;margin-bottom:1rem;'>
+                <thead><tr style='background:#1E3A8A;color:white;'>
+                <th style='padding:8px;border:1px solid #334155;'>OS Family</th>
+                <th style='padding:8px;border:1px solid #334155;'>Workload Type</th>
+                <th style='padding:8px;border:1px solid #334155;'>Cloud Target</th>
+                <th style='padding:8px;border:1px solid #334155;'>Upgrade Path</th>
+                <th style='padding:8px;border:1px solid #334155;'>Replacement Alternative</th>
+                </tr></thead><tbody>
+                <tr style='background:#F8FAFC;'><td style='padding:6px 8px;border:1px solid #E2E8F0;'>Windows</td><td style='padding:6px 8px;border:1px solid #E2E8F0;'>AD, .NET, IIS</td><td style='padding:6px 8px;border:1px solid #E2E8F0;color:#1D4ED8;'>Azure</td><td style='padding:6px 8px;border:1px solid #E2E8F0;'>Win 2025 LTSC</td><td style='padding:6px 8px;border:1px solid #E2E8F0;'>Azure PaaS</td></tr>
+                <tr style='background:#FFF;'><td style='padding:6px 8px;border:1px solid #E2E8F0;'>RHEL/CentOS</td><td style='padding:6px 8px;border:1px solid #E2E8F0;'>Java, Oracle DB</td><td style='padding:6px 8px;border:1px solid #E2E8F0;color:#1D4ED8;'>AWS</td><td style='padding:6px 8px;border:1px solid #E2E8F0;'>RHEL 9</td><td style='padding:6px 8px;border:1px solid #E2E8F0;'>Amazon Linux 2023</td></tr>
+                <tr style='background:#F8FAFC;'><td style='padding:6px 8px;border:1px solid #E2E8F0;'>Ubuntu/Debian</td><td style='padding:6px 8px;border:1px solid #E2E8F0;'>Containers, K8s</td><td style='padding:6px 8px;border:1px solid #E2E8F0;color:#1D4ED8;'>GCP</td><td style='padding:6px 8px;border:1px solid #E2E8F0;'>Ubuntu 24.04 LTS</td><td style='padding:6px 8px;border:1px solid #E2E8F0;'>GKE Autopilot</td></tr>
+                <tr style='background:#FFF;'><td style='padding:6px 8px;border:1px solid #E2E8F0;'>Oracle Linux</td><td style='padding:6px 8px;border:1px solid #E2E8F0;'>Oracle DB, PL/SQL</td><td style='padding:6px 8px;border:1px solid #E2E8F0;color:#1D4ED8;'>OCI</td><td style='padding:6px 8px;border:1px solid #E2E8F0;'>OL 9</td><td style='padding:6px 8px;border:1px solid #E2E8F0;'>OCI Autonomous DB</td></tr>
+                <tr style='background:#F8FAFC;'><td style='padding:6px 8px;border:1px solid #E2E8F0;'>SLES</td><td style='padding:6px 8px;border:1px solid #E2E8F0;'>SAP, HPC</td><td style='padding:6px 8px;border:1px solid #E2E8F0;color:#1D4ED8;'>Azure/AWS</td><td style='padding:6px 8px;border:1px solid #E2E8F0;'>SLES 15 SP6</td><td style='padding:6px 8px;border:1px solid #E2E8F0;'>Managed SAP</td></tr>
+                </tbody></table>
+                """, unsafe_allow_html=True)
+
+                st.markdown("**Select your preferred cloud target:**")
+                for name, emoji, desc, key in all_profiles:
+                    col1, col2 = st.columns([1, 10])
+                    with col1:
+                        st.checkbox(f"{emoji}", key=f"survey_cloud_{key}", value=False)
+                    with col2:
+                        st.markdown(f"**{name}**  \n<small style='color:#4B5563;'>{desc}</small>",
+                                    unsafe_allow_html=True)
+
+            # ══════════════════════════════════════════════════════════════════
+            # CATEGORY 2a: OS & DATABASE UPGRADE MANDATES
+            # ══════════════════════════════════════════════════════════════════
+            with _t_upgrade:
+                st.markdown("""
+                <div style="background:#F0FDF4;border:1px solid #A7F3D0;border-radius:8px;
+                            padding:0.8rem 1rem;margin-bottom:0.8rem;">
+                  <h4 style="margin:0;color:#065F46;">Category 2: OS & Database Upgrade Mandates</h4>
+                  <small style="color:#64748B;">Confirm which OS families and databases are in your
+                  active landscape. Unchecked items will be excluded from upgrade analysis.</small>
+                </div>""", unsafe_allow_html=True)
+
+                st.markdown("##### 🖥️ Operating System Families")
+                st.caption("From Agent 1 baseline — tick families present in your environment")
                 for fam_name, desc, emoji in family_display:
                     count = len(os_families.get(fam_name, []))
                     if fam_name == "Other":
@@ -1571,10 +1650,9 @@ if _show_strategist:
                             + (f" — <em>{versions_preview}</em>" if versions_preview else "")
                             + f" ({count} tracked)</small>", unsafe_allow_html=True)
 
-            # ── TAB 2: DB Families ───────────────────────────────────────────
-            with _st_db:
-                st.markdown(f"**🗄️ Database Landscape** — {len([f for f in db_families if f != 'Other'])} families detected")
-                db_family_display = get_db_family_display()
+                st.divider()
+                st.markdown("##### 🗄️ Database Families")
+                st.caption("Confirm database families in your environment")
                 for fam_name, desc, emoji in db_family_display:
                     count = len(db_families.get(fam_name, []))
                     if fam_name == "Other":
@@ -1595,59 +1673,60 @@ if _show_strategist:
                             + (f" — <em>{versions_preview}</em>" if versions_preview else "")
                             + f" ({count} tracked)</small>", unsafe_allow_html=True)
 
-            # ── TAB 3: Cloud Target ──────────────────────────────────────────
-            with _st_cloud:
-                st.markdown("**☁️ Cloud Target Profile** — Select your target cloud environment")
-                CLOUD_PROFILES = [
-                    ("Microsoft-Centric (Azure)", "🔷",
-                     "Optimized for Windows Server & Active Directory. Azure Hybrid Benefit.", "Azure"),
-                    ("Linux & Scale (AWS)", "🟠",
-                     "Optimized for RHEL/RPM-based footprints. Graviton ARM processors.", "AWS"),
-                    ("Container & Data (GCP)", "🔵",
-                     "Optimized for Ubuntu/Debian & Kubernetes (GKE). AI data pipelines.", "GCP"),
-                    ("Database & Legacy Bridge (Oracle/OCI)", "🔴",
-                     "Native home for Oracle Linux/Solaris. Oracle Database backends.", "OCI"),
-                    ("Sovereign-First (US Gov / High-Reg)", "🛡️",
-                     "Compliance-driven: FedRAMP High, ITAR, CJIS regions.", "GovCloud"),
-                ]
-                custom_profiles = st.session_state.get("a5_custom_cloud_profiles", [])
-                all_profiles = CLOUD_PROFILES + custom_profiles
-                for name, emoji, desc, key in all_profiles:
-                    col1, col2 = st.columns([1, 10])
-                    with col1:
-                        st.checkbox(f"{emoji}", key=f"survey_cloud_{key}", value=False)
-                    with col2:
-                        st.markdown(f"**{name}**  \n<small style='color:#4B5563;'>{desc}</small>",
-                                    unsafe_allow_html=True)
+            # ══════════════════════════════════════════════════════════════════
+            # CATEGORY 2b: REPLACEMENT MANDATES (Web/App/Framework)
+            # ══════════════════════════════════════════════════════════════════
+            with _t_replace:
+                st.markdown("""
+                <div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:8px;
+                            padding:0.8rem 1rem;margin-bottom:0.8rem;">
+                  <h4 style="margin:0;color:#991B1B;">Category 2: Replacement Mandates</h4>
+                  <small style="color:#64748B;">Confirm Web Servers, App Servers, and Frameworks
+                  in your landscape. EOL items will be flagged for mandatory replacement.</small>
+                </div>""", unsafe_allow_html=True)
 
-            # ── TAB 4: Web/App Servers ───────────────────────────────────────
-            with _st_ws:
-                st.markdown("**🌐 Web & App Servers** — Confirm servers in your landscape")
-                ws_df = st.session_state.ws_df
-                as_df = st.session_state.as_df
-                ws_names = sorted(ws_df["Web Server"].dropna().unique().tolist())
-                as_names = sorted(as_df["App Server"].dropna().unique().tolist())
-                st.caption(f"Web Servers: {len(ws_names)} · App Servers: {len(as_names)}")
+                st.markdown("##### 🌐 Web Servers")
                 wc1, wc2 = st.columns(2)
-                with wc1:
-                    st.markdown("**Web Servers**")
-                    for ws in ws_names:
+                for i, ws in enumerate(ws_names):
+                    with (wc1 if i % 2 == 0 else wc2):
                         st.checkbox(ws, value=True, key=f"survey_ws_{ws}")
-                with wc2:
-                    st.markdown("**App Servers**")
-                    for a_s in as_names:
+
+                st.divider()
+                st.markdown("##### ⚙️ Application Servers")
+                ac1, ac2 = st.columns(2)
+                for i, a_s in enumerate(as_names):
+                    with (ac1 if i % 2 == 0 else ac2):
                         st.checkbox(a_s, value=True, key=f"survey_as_{a_s}")
 
-            # ── TAB 5: Frameworks ────────────────────────────────────────────
-            with _st_fw:
-                st.markdown("**📦 Frameworks & Runtimes** — Confirm frameworks in your landscape")
-                fw_df = st.session_state.fw_df
-                fw_names = sorted(fw_df["Framework"].dropna().unique().tolist())
-                st.caption(f"{len(fw_names)} frameworks tracked")
+                st.divider()
+                st.markdown("##### 📦 Frameworks & Runtimes")
                 fc1, fc2 = st.columns(2)
                 for i, fw in enumerate(fw_names):
                     with (fc1 if i % 2 == 0 else fc2):
                         st.checkbox(fw, value=True, key=f"survey_fw_{fw}")
+
+            # ══════════════════════════════════════════════════════════════════
+            # CATEGORY 3: PRINCIPLES & COSTS (preview)
+            # ══════════════════════════════════════════════════════════════════
+            with _t_policy:
+                st.markdown("""
+                <div style="background:#FFF7ED;border:1px solid #FED7AA;border-radius:8px;
+                            padding:0.8rem 1rem;margin-bottom:0.8rem;">
+                  <h4 style="margin:0;color:#92400E;">Category 3: Interactive Principles & Costs</h4>
+                  <small style="color:#64748B;">After confirming Categories 1-2, Agent 5 will generate
+                  Guiding Principles and cost estimates. Then a Policy Chat will collect your
+                  institutional context (compliance, budgets, risk tolerance).</small>
+                </div>""", unsafe_allow_html=True)
+
+                st.info(
+                    "**What happens next after you confirm:**\n\n"
+                    "1. **Guiding Principles Table** — AI-generated upgrade & replacement rules per technology\n"
+                    "2. **Cost Estimator** — Upgrade vs Replace vs Do Nothing costs\n"
+                    "3. **Migration Wave Planner** — Technologies grouped by urgency\n"
+                    "4. **Policy Chat** — Agent 5 asks 10-15 questions about your compliance, budgets, capacity\n"
+                    "5. **Final Recommendations** — Cross-referenced with Agent 2's technical analysis\n\n"
+                    "*All outputs are exported to Excel, PowerPoint, and PDF.*"
+                )
 
             # ── Confirm All — Single button to consolidate ───────────────────
             st.divider()
@@ -1655,21 +1734,22 @@ if _show_strategist:
             <div style="background:linear-gradient(135deg,#0F172A,#1E293B);
                         border-radius:8px;padding:0.8rem 1rem;margin-bottom:0.5rem;">
               <span style="color:#F59E0B;font-weight:700;font-size:0.85rem;">
-                🧠 Agent 5 will consolidate your selections and generate comprehensive Guiding Principles
+                🧠 Agent 5 will consolidate your selections across all categories
+                and generate comprehensive Guiding Principles
               </span>
             </div>
             """, unsafe_allow_html=True)
 
-            if st.button("✅ Confirm All Selections → Generate Guiding Principles",
+            if st.button("✅ Confirm All Categories → Generate Guiding Principles",
                          type="primary", use_container_width=True, key="survey_confirm"):
                 # Collect OS selections
-                os_selected = [fam for fam, _, _ in get_family_display()
+                os_selected = [fam for fam, _, _ in family_display
                                if st.session_state.get(f"survey_os_{fam}", False) and fam != "Other"]
                 st.session_state.a5_landscape_selected = os_selected
                 st.session_state.a5_context["os_landscape"] = ", ".join(os_selected)
 
                 # Collect DB selections
-                db_selected = [fam for fam, _, _ in get_db_family_display()
+                db_selected = [fam for fam, _, _ in db_family_display
                                if st.session_state.get(f"survey_db_{fam}", False) and fam != "Other"]
                 st.session_state.a5_db_landscape_selected = db_selected
                 st.session_state.a5_context["db_landscape"] = ", ".join(db_selected)
