@@ -864,9 +864,9 @@ if _cur_page == "Discovery":
     # ── Flowchart at top — highlights current Agent 5 step ────────────────────
     a5s = st.session_state.get("a5_status", "idle")
     _fc_steps = [
-        ("1a", "Preliminary\nGuiding Principles", ["idle", "landscape", "landscape_other"]),
-        ("2a", "Current Landscape\nDiscovery", ["db_landscape", "db_landscape_other"]),
-        ("3a", "Preliminary\nDisposition", ["cloud_profile", "cloud_other"]),
+        ("1a", "Preliminary\nGuiding Principles", ["idle", "survey"]),
+        ("2a", "Current Landscape\nDiscovery", ["idle", "survey"]),
+        ("3a", "Preliminary\nDisposition", ["principles_table"]),
         ("4a", "Preliminary\nWave Planning", ["principles_table"]),
         ("5",  "App\nDiscussion", ["chatting"]),
         ("1b", "Detailed\nGuiding Principles", ["principles"]),
@@ -877,10 +877,8 @@ if _cur_page == "Discovery":
 
     # Build flowchart HTML
     _step_map_order = {
-        "idle": 0, "landscape": 0, "landscape_other": 0,
-        "db_landscape": 1, "db_landscape_other": 1,
-        "cloud_profile": 2, "cloud_other": 2,
-        "principles_table": 3,
+        "idle": 0, "survey": 0,
+        "principles_table": 1,
         "chatting": 4,
         "principles": 5,
         "costing": 6,
@@ -920,7 +918,7 @@ if _cur_page == "Discovery":
     # ── Clickable flowchart navigation buttons ────────────────────────────────
     _fc_nav_cols = st.columns(len(_fc_steps))
     _fc_target_status = [
-        "idle", "db_landscape", "cloud_profile", "principles_table",
+        "survey", "survey", "principles_table", "principles_table",
         "chatting", "principles", "costing", "ready", "done"
     ]
     for i, (col, (step_id, label, statuses)) in enumerate(zip(_fc_nav_cols, _fc_steps)):
@@ -934,14 +932,17 @@ if _cur_page == "Discovery":
                 st.session_state.a5_status = _fc_target_status[i]
                 st.rerun()
 
-    # ── Progress stepper bar (OS → DB → Cloud → ... → Done) ──────────────────
+    # ── Progress stepper bar ────────────────────────────────────────────────────
     steps    = ["🗺️ OS", "🗄️ DB", "☁️ Cloud", "📋 Principles & Costs", "💬 Policy Chat", "⚖️ GP Generate", "💰 Cost Intel", "🧠 Analysis", "✅ Done"]
-    step_map = {"idle":0,"landscape":0,"landscape_other":0,
-                "db_landscape":1,"db_landscape_other":1,
-                "cloud_profile":2,"cloud_other":2,
+    # Survey covers OS+DB+Cloud (steps 0-2), then principles_table is step 3
+    _survey_step = 0  # OS/DB/Cloud all happen in survey
+    step_map = {"idle":0,"survey":0,
                 "principles_table":3,
                 "chatting":4,"principles":5,"costing":6,
                 "ready":6,"analysing":7,"done":8}
+    # When in principles_table or later, mark OS/DB/Cloud as done
+    if a5s in ("principles_table","chatting","principles","costing","ready","analysing","done"):
+        step_map["principles_table"] = 3  # already correct
     cur_step = step_map.get(a5s, 0)
     s_cols   = st.columns(len(steps))
     for i, (col, lbl) in enumerate(zip(s_cols, steps)):
@@ -1515,517 +1516,196 @@ if _show_strategist:
     else:
         a5s = st.session_state.get("a5_status", "idle")
 
-        # ── PHASE 0: LANDSCAPE SURVEY ────────────────────────────────────────
-        if a5s in ("idle", "landscape"):
+        # ── PHASE 0: UNIFIED SURVEY (OS + DB + Cloud + Web/App + Framework) ────
+        if a5s in ("idle", "survey"):
             from agents.agent_analysis import categorize_os_families, get_family_display
-
-            # Categorize OS families from live data
-            os_families = categorize_os_families(st.session_state.os_df)
-            st.session_state.a5_landscape_families = os_families
-
-            st.markdown("""
-            <div style="background:linear-gradient(135deg,#EFF6FF,#F0FDF4);
-                        border:1px solid #BFDBFE;border-radius:12px;
-                        padding:1.2rem 1.4rem;margin-bottom:1rem;">
-              <h3 style="margin:0 0 0.5rem;color:#1E40AF;font-size:1.05rem;">
-                🗺️ OS Landscape Survey
-              </h3>
-              <p style="margin:0;color:#374151;font-size:0.88rem;">
-                I have categorized your OS landscape into <strong>""" + str(len([f for f in os_families if f != "Other"])) + """ primary families</strong>
-                to simplify our modernization strategy.<br>
-                <strong>Are all of the following currently present in your active IT landscape?</strong><br>
-                <em>Please indicate any families that are NOT in scope for this exercise.</em>
-              </p>
-            </div>""", unsafe_allow_html=True)
+            from agents.agent_analysis import categorize_db_families, get_db_family_display
 
             if a5s == "idle":
-                st.session_state.a5_status = "landscape"
+                st.session_state.a5_status = "survey"
                 st.rerun()
 
-            # Display family checkboxes
-            family_display = get_family_display()
-            selected = []
+            # Categorize families from live data
+            os_families = categorize_os_families(st.session_state.os_df)
+            st.session_state.a5_landscape_families = os_families
+            db_families = categorize_db_families(st.session_state.db_df)
+            st.session_state.a5_db_landscape_families = db_families
 
-            with st.form("landscape_form"):
+            # ── Chat-style container with embedded survey tabs ────────────────
+            st.markdown("""
+            <div style="background:linear-gradient(135deg,#0F172A,#1E293B);
+                        border-radius:12px;padding:1rem 1.2rem;margin-bottom:1rem;">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <div class="chat-dot"></div>
+                <span style="color:white;font-weight:700;font-size:1rem;">
+                  🧠 Agent 5 — Landscape Discovery
+                </span>
+              </div>
+              <p style="color:#94A3B8;font-size:0.82rem;margin:6px 0 0;">
+                Please review and confirm your IT landscape across all 5 categories below.
+                Tick the technologies present in your environment, then confirm to generate Guiding Principles.
+              </p>
+            </div>
+            """, unsafe_allow_html=True)
+
+            # 5 Survey tabs inside the chat
+            _st_os, _st_db, _st_cloud, _st_ws, _st_fw = st.tabs([
+                "🖥️ OS Families", "🗄️ Database Families", "☁️ Cloud Target",
+                "🌐 Web/App Servers", "📦 Frameworks",
+            ])
+
+            # ── TAB 1: OS Families ────────────────────────────────────────────
+            with _st_os:
+                st.markdown(f"**🖥️ OS Landscape** — {len([f for f in os_families if f != 'Other'])} families detected")
+                family_display = get_family_display()
                 for fam_name, desc, emoji in family_display:
                     count = len(os_families.get(fam_name, []))
                     if fam_name == "Other":
-                        # Always show Other option
                         versions_preview = ""
                         default = False
                     else:
                         if count == 0:
-                            continue  # Skip families with no entries in our baseline
+                            continue
                         versions_preview = ", ".join(os_families[fam_name][:4])
                         if count > 4:
                             versions_preview += f" + {count - 4} more"
                         default = True
-
                     col1, col2 = st.columns([1, 4])
                     with col1:
-                        checked = st.checkbox(
-                            f"{emoji} {fam_name}",
-                            value=default,
-                            key=f"ls_{fam_name}"
-                        )
+                        st.checkbox(f"{emoji} {fam_name}", value=default, key=f"survey_os_{fam_name}")
                     with col2:
                         st.markdown(
                             f"<small style='color:#6B7280;'>{desc}"
                             + (f" — <em>{versions_preview}</em>" if versions_preview else "")
-                            + f" ({count} tracked)</small>",
-                            unsafe_allow_html=True
-                        )
-                    if checked:
-                        selected.append(fam_name)
+                            + f" ({count} tracked)</small>", unsafe_allow_html=True)
 
-                st.divider()
-                submitted = st.form_submit_button(
-                    "✅ Confirm OS Landscape → Proceed to DB Survey",
-                    type="primary", use_container_width=True)
-
-            if submitted:
-                st.session_state.a5_landscape_selected = selected
-                if "Other" in selected:
-                    st.session_state.a5_status = "landscape_other"
-                else:
-                    # Store landscape context and proceed to DB landscape
-                    st.session_state.a5_context["os_landscape"] = ", ".join(
-                        [f for f in selected if f != "Other"])
-                    st.session_state.a5_status = "db_landscape"
-                st.rerun()
-
-        # ── PHASE 0b: OTHER OS HANDLING ──────────────────────────────────────
-        elif a5s == "landscape_other":
-            from agents.agent_analysis import categorize_os_families
-
-            st.markdown("""
-            <div style="background:#FFF7ED;border:1px solid #FED7AA;border-radius:12px;
-                        padding:1rem 1.2rem;margin-bottom:1rem;">
-              <h3 style="margin:0 0 0.4rem;color:#92400E;font-size:1rem;">
-                ❓ You selected "Other" — Tell us about your additional OS
-              </h3>
-              <p style="margin:0;color:#78716C;font-size:0.85rem;">
-                Please describe the OS that is missing from our list.
-                Agent 5 will check if we already track it under a different name,
-                or if it needs to be added to our baseline.
-              </p>
-            </div>""", unsafe_allow_html=True)
-
-            other_input = st.text_input(
-                "What OS is missing from the list?",
-                placeholder="e.g. Gentoo Linux, Arch Linux, Chrome OS Flex...",
-                key="a5_other_os_input"
-            )
-
-            if st.button("🔍 Verify OS", type="primary", disabled=not (key_ok and other_input)):
-                with st.spinner("🧠 Agent 5 is checking if this OS is already tracked..."):
-                    agent5 = PolicyAnalysisAgent(api_key=api_key)
-                    result = agent5.verify_unknown_os(other_input, st.session_state.os_df)
-                    st.session_state["_os_verify_result"] = result
-                    st.session_state["_os_verify_input"] = other_input
-                    st.rerun()
-
-            # Show result from verification (persisted in session state)
-            _os_result = st.session_state.get("_os_verify_result")
-            _os_input = st.session_state.get("_os_verify_input", "")
-            if _os_result:
-                if _os_result.get("match_found"):
-                    st.success(
-                        f"✅ **Match found!** \"{_os_input}\" is already tracked as "
-                        f"**{_os_result.get('matched_to', '?')}** in our baseline.\n\n"
-                        f"_{_os_result.get('explanation', '')}_"
-                    )
-                    if st.button("➡️ Proceed to DB Landscape", key="proceed_after_match", type="primary"):
-                        st.session_state.pop("_os_verify_result", None)
-                        st.session_state.a5_context["os_landscape"] = ", ".join(
-                            [f for f in st.session_state.a5_landscape_selected if f != "Other"])
-                        st.session_state.a5_status = "db_landscape"
-                        st.rerun()
-
-                elif _os_result.get("is_valid_os"):
-                    os_name = _os_result.get("os_name", _os_input)
-                    st.warning(
-                        f"🆕 **New OS detected:** **{os_name}** is a valid OS not in our baseline.\n\n"
-                        f"_{_os_result.get('explanation', '')}_"
-                    )
-                    if st.button("🚀 Add OS & Re-scan with Agent 1", type="primary", key="trigger_a1"):
-                        import pandas as pd
-                        new_row = {
-                            "OS Version": os_name,
-                            "Availability Date": "",
-                            "Security/Standard Support End": "",
-                            "Mainstream/Full Support End": "",
-                            "Extended/LTSC Support End": "",
-                            "Notes": f"Added by Agent 5 landscape survey — {datetime.now().strftime('%d %b %Y')}",
-                            "Recommendation": "",
-                            "Upgrade": "N", "Replace": "N",
-                            "Primary Alternative": "", "Secondary Alternative": ""
-                        }
-                        st.session_state.os_df = pd.concat(
-                            [st.session_state.os_df, pd.DataFrame([new_row])],
-                            ignore_index=True)
-                        st.session_state.os_df = add_risk_scores(st.session_state.os_df, "OS")
-
-                        st.session_state.a1_status = "running"
-                        with st.spinner(f"🔍 Agent 1 scanning lifecycle data for {os_name}..."):
-                            try:
-                                agent1 = OSDataAgent(api_key=api_key)
-                                updates = agent1.fetch_updates(progress_callback=lambda p, m: None)
-                                new_os, new_db, new_ws, new_as, new_fw, changes = agent1.merge_updates_into_df(
-                                    st.session_state.os_df, st.session_state.db_df, updates,
-                                    ws_df=st.session_state.ws_df,
-                                    as_df=st.session_state.as_df,
-                                    fw_df=st.session_state.fw_df)
-                                st.session_state.os_df = add_risk_scores(new_os, "OS")
-                                st.session_state.db_df = add_risk_scores(new_db, "DB")
-                                st.session_state.ws_df = add_risk_scores(new_ws, "DB")
-                                st.session_state.as_df = add_risk_scores(new_as, "DB")
-                                st.session_state.fw_df = add_risk_scores(new_fw, "DB")
-                                st.session_state.changes_log = changes
-                                st.session_state.a1_status = "done"
-                                save_os_df(st.session_state.os_df)
-                                save_db_df(st.session_state.db_df)
-                            except Exception as e:
-                                st.session_state.a1_status = "error"
-                                st.error(f"Agent 1 error: {e}")
-                        st.session_state.pop("_os_verify_result", None)
-                        st.session_state.a5_status = "landscape"
-                        st.rerun()
-                else:
-                    st.error(
-                        f"❌ **\"{_os_input}\" does not appear to be a recognized OS.**\n\n"
-                        f"_{_os_result.get('explanation', '')}_\n\n"
-                        f"Please try again with a valid operating system name."
-                    )
-
-            st.divider()
-            if st.button("⏭️ Skip — Proceed without adding", use_container_width=True):
-                st.session_state.a5_context["os_landscape"] = ", ".join(
-                    [f for f in st.session_state.a5_landscape_selected if f != "Other"])
-                st.session_state.a5_status = "db_landscape"
-                st.rerun()
-
-        # ── PHASE 0b2: DB LANDSCAPE SURVEY ──────────────────────────────────
-        elif a5s in ("db_landscape", "db_landscape_other"):
-            from agents.agent_analysis import categorize_db_families, get_db_family_display
-
-            if a5s == "db_landscape":
-                db_families = categorize_db_families(st.session_state.db_df)
-                st.session_state.a5_db_landscape_families = db_families
-
-                st.markdown("""
-                <div style="background:linear-gradient(135deg,#FDF2F8,#FAE8FF);
-                            border:1px solid #E9D5FF;border-radius:12px;
-                            padding:1.2rem 1.4rem;margin-bottom:1rem;">
-                  <h3 style="margin:0 0 0.5rem;color:#7C2D12;font-size:1.05rem;">
-                    🗄️ Database Landscape Survey
-                  </h3>
-                  <p style="margin:0;color:#374151;font-size:0.88rem;">
-                    I have categorized your database landscape into <strong>""" + str(len([f for f in db_families if f != "Other"])) + """ families</strong>.
-                    <strong>Which database families are in your active IT landscape?</strong>
-                  </p>
-                </div>""", unsafe_allow_html=True)
-
-                family_display = get_db_family_display()
-                selected_db = []
-
-                with st.form("db_landscape_form"):
-                    for fam_name, desc, emoji in family_display:
-                        count = len(db_families.get(fam_name, []))
-                        if fam_name == "Other":
-                            versions_preview = ""
-                            default = False
-                        else:
-                            if count == 0:
-                                continue
-                            versions_preview = ", ".join(db_families[fam_name][:3])
-                            if count > 3:
-                                versions_preview += f" +{count - 3} more"
-                            default = True
-
-                        col1, col2 = st.columns([1, 4])
-                        with col1:
-                            checked = st.checkbox(f"{emoji} {fam_name}", value=default, key=f"dls_{fam_name}")
-                        with col2:
-                            st.markdown(
-                                f"<small style='color:#6B7280;'>{desc}"
-                                + (f" — <em>{versions_preview}</em>" if versions_preview else "")
-                                + f" ({count} tracked)</small>", unsafe_allow_html=True)
-                        if checked:
-                            selected_db.append(fam_name)
-
-                    st.divider()
-                    submitted = st.form_submit_button(
-                        "✅ Confirm DB Landscape → Proceed to Cloud Profile",
-                        type="primary", use_container_width=True)
-
-                if submitted:
-                    st.session_state.a5_db_landscape_selected = selected_db
-                    if "Other" in selected_db:
-                        st.session_state.a5_status = "db_landscape_other"
+            # ── TAB 2: DB Families ───────────────────────────────────────────
+            with _st_db:
+                st.markdown(f"**🗄️ Database Landscape** — {len([f for f in db_families if f != 'Other'])} families detected")
+                db_family_display = get_db_family_display()
+                for fam_name, desc, emoji in db_family_display:
+                    count = len(db_families.get(fam_name, []))
+                    if fam_name == "Other":
+                        default = False
                     else:
-                        st.session_state.a5_context["db_landscape"] = ", ".join(
-                            [f for f in selected_db if f != "Other"])
-                        st.session_state.a5_status = "cloud_profile"
-                    st.rerun()
-
-            # ── DB "Other" handling ──────────────────────────────────────────
-            elif a5s == "db_landscape_other":
-                st.markdown("""
-                <div style="background:#FFF7ED;border:1px solid #FED7AA;border-radius:12px;
-                            padding:1rem 1.2rem;margin-bottom:1rem;">
-                  <h4 style="margin:0 0 0.4rem;color:#92400E;font-size:0.95rem;">
-                    ❓ You selected "Other" — Tell us about your additional database
-                  </h4>
-                  <p style="margin:0;color:#78716C;font-size:0.82rem;">
-                    Agent 5 will check if we already track it. If it's new, it will be
-                    added to the baseline automatically.
-                  </p>
-                </div>""", unsafe_allow_html=True)
-
-                other_db_input = st.text_input(
-                    "What database is missing?",
-                    placeholder="e.g. ClickHouse, ScyllaDB, TiDB, FaunaDB...",
-                    key="a5_other_db_input"
-                )
-
-                if st.button("🔍 Verify Database", type="primary", disabled=not (key_ok and other_db_input)):
-                    with st.spinner("🧠 Agent 5 checking..."):
-                        # Check against DB dataframe
-                        known = st.session_state.db_df["Database"].str.lower().tolist()
-                        match_found = any(other_db_input.lower() in k for k in known)
-
-                    if match_found:
-                        st.success(f"✅ **\"{other_db_input}\" is already tracked** in the baseline. No changes needed.")
-                        if st.button("➡️ Proceed to Cloud Profile", key="db_match_proceed"):
-                            st.session_state.a5_context["db_landscape"] = ", ".join(
-                                [f for f in st.session_state.a5_db_landscape_selected if f != "Other"])
-                            st.session_state.a5_status = "cloud_profile"
-                            st.rerun()
-                    else:
-                        st.warning(
-                            f"🆕 **{other_db_input}** is not in the baseline.\n\n"
-                            f"**Agent 1 (Sentinel) will be triggered** to add it and fetch lifecycle data."
-                        )
-                        if st.button("🚀 Add Database & Re-scan with Agent 1", type="primary", key="trigger_a1_db"):
-                            import pandas as pd
-                            new_row = {
-                                "Database": other_db_input,
-                                "Version": "Latest",
-                                "Type": "Database",
-                                "Mainstream / Premier End": "",
-                                "Extended Support End": "",
-                                "Status": "Supported",
-                                "Notes": f"Added by Agent 5 DB survey — {datetime.now().strftime('%d %b %Y')}",
-                                "Recommendation": "",
-                                "Upgrade": "N", "Replace": "N",
-                                "Primary Alternative": "", "Secondary Alternative": ""
-                            }
-                            st.session_state.db_df = pd.concat(
-                                [st.session_state.db_df, pd.DataFrame([new_row])],
-                                ignore_index=True)
-                            st.session_state.db_df = add_risk_scores(st.session_state.db_df, "DB")
-
-                            # Trigger Agent 1
-                            st.session_state.a1_status = "running"
-                            with st.spinner(f"🔍 Agent 1 scanning lifecycle data for {other_db_input}..."):
-                                try:
-                                    agent1 = OSDataAgent(api_key=api_key)
-                                    updates = agent1.fetch_updates(progress_callback=lambda p, m: None)
-                                    new_os, new_db, new_ws, new_as, new_fw, changes = agent1.merge_updates_into_df(
-                                        st.session_state.os_df, st.session_state.db_df, updates,
-                                        ws_df=st.session_state.ws_df,
-                                        as_df=st.session_state.as_df,
-                                        fw_df=st.session_state.fw_df)
-                                    st.session_state.os_df = add_risk_scores(new_os, "OS")
-                                    st.session_state.db_df = add_risk_scores(new_db, "DB")
-                                    st.session_state.ws_df = add_risk_scores(new_ws, "DB")
-                                    st.session_state.as_df = add_risk_scores(new_as, "DB")
-                                    st.session_state.fw_df = add_risk_scores(new_fw, "DB")
-                                    st.session_state.changes_log = changes
-                                    st.session_state.a1_status = "done"
-                                    save_os_df(st.session_state.os_df)
-                                    save_db_df(st.session_state.db_df)
-                                except Exception as e:
-                                    st.session_state.a1_status = "error"
-                                    st.error(f"Agent 1 error: {e}")
-
-                            st.success(f"✅ **{other_db_input}** added. Returning to DB survey to re-categorize...")
-                            st.session_state.a5_status = "db_landscape"
-                            import time; time.sleep(2)
-                            st.rerun()
-
-                st.divider()
-                if st.button("⏭️ Skip — Proceed without adding", use_container_width=True, key="db_skip"):
-                    st.session_state.a5_context["db_landscape"] = ", ".join(
-                        [f for f in st.session_state.a5_db_landscape_selected if f != "Other"])
-                    st.session_state.a5_status = "cloud_profile"
-                    st.rerun()
-
-        # ── PHASE 0c: CLOUD PROFILE SELECTION ────────────────────────────────
-        elif a5s in ("cloud_profile", "cloud_other"):
-            from agents.agent_analysis import PolicyAnalysisAgent as _PA5
-
-            st.markdown("""
-            <div style="background:linear-gradient(135deg,#EFF6FF,#E0F2FE);
-                        border:1px solid #93C5FD;border-radius:12px;
-                        padding:1.2rem 1.4rem;margin-bottom:1rem;">
-              <h3 style="margin:0 0 0.5rem;color:#1E3A8A;font-size:1.05rem;">
-                ☁️ Cloud Target Profile
-              </h3>
-              <p style="margin:0;color:#374151;font-size:0.88rem;">
-                <strong>Please select the profile that best describes your target environment.</strong><br>
-                This helps Agent 5 tailor migration recommendations to your cloud strategy.
-              </p>
-            </div>""", unsafe_allow_html=True)
-
-            # ── Standard profiles ────────────────────────────────────────────
-            CLOUD_PROFILES = [
-                ("Microsoft-Centric (Azure)",
-                 "🔷",
-                 "Optimized for **Windows Server** (2012–2025) and Active Directory. "
-                 "Leverages Azure Hybrid Benefit to reuse your on-prem licenses.",
-                 "Azure"),
-                ("Linux & Scale (AWS)",
-                 "🟠",
-                 "Optimized for large **RHEL/RPM-based** footprints. "
-                 "Uses Graviton (ARM) processors for 40% better price-performance on modern Linux.",
-                 "AWS"),
-                ("Container & Data (GCP)",
-                 "🔵",
-                 "Optimized for **Ubuntu/Debian** and Kubernetes (GKE). "
-                 "Ideal for high-speed AI data pipelines and global private fiber networking.",
-                 "GCP"),
-                ("Database & Legacy Bridge (Oracle/OCI)",
-                 "🔴",
-                 "The best \"Native Home\" for **Oracle Linux and Solaris**. "
-                 "Offers the most stable path for large Oracle Database backends.",
-                 "OCI"),
-                ("Sovereign-First (US Government / High-Reg)",
-                 "🛡️",
-                 "A **vendor-agnostic, compliance-driven path**. Choose this if your data MUST reside in "
-                 "**FedRAMP High, ITAR, or CJIS** regions (e.g., AWS GovCloud or Azure Government) "
-                 "regardless of which OS is running.",
-                 "GovCloud"),
-            ]
-
-            # Add any custom profiles from previous "Other" additions
-            custom_profiles = st.session_state.get("a5_custom_cloud_profiles", [])
-            all_profiles = CLOUD_PROFILES + custom_profiles
-
-            if a5s == "cloud_profile":
-                with st.form("cloud_profile_form"):
-                    selected_cloud = None
-                    for i, (name, emoji, desc, key) in enumerate(all_profiles):
-                        col1, col2 = st.columns([1, 10])
-                        with col1:
-                            checked = st.checkbox(f"{emoji}", key=f"cp_{key}", value=False)
-                        with col2:
-                            st.markdown(
-                                f"**{name}**  \n"
-                                f"<small style='color:#4B5563;'>{desc}</small>",
-                                unsafe_allow_html=True)
-                        if checked:
-                            selected_cloud = (name, key)
-
-                    # Other option
-                    st.divider()
-                    col1, col2 = st.columns([1, 10])
+                        if count == 0:
+                            continue
+                        default = True
+                    versions_preview = ", ".join(db_families.get(fam_name, [])[:3])
+                    if count > 3:
+                        versions_preview += f" +{count - 3} more"
+                    col1, col2 = st.columns([1, 4])
                     with col1:
-                        other_checked = st.checkbox("❓", key="cp_other", value=False)
+                        st.checkbox(f"{emoji} {fam_name}", value=default, key=f"survey_db_{fam_name}")
                     with col2:
                         st.markdown(
-                            "**Other Cloud Provider**  \n"
-                            "<small style='color:#4B5563;'>Not listed above — I'll describe my cloud target</small>",
-                            unsafe_allow_html=True)
+                            f"<small style='color:#6B7280;'>{desc}"
+                            + (f" — <em>{versions_preview}</em>" if versions_preview else "")
+                            + f" ({count} tracked)</small>", unsafe_allow_html=True)
 
-                    st.divider()
-                    submitted = st.form_submit_button(
-                        "✅ Confirm Cloud Profile → Proceed to Policy Chat",
-                        type="primary", use_container_width=True)
+            # ── TAB 3: Cloud Target ──────────────────────────────────────────
+            with _st_cloud:
+                st.markdown("**☁️ Cloud Target Profile** — Select your target cloud environment")
+                CLOUD_PROFILES = [
+                    ("Microsoft-Centric (Azure)", "🔷",
+                     "Optimized for Windows Server & Active Directory. Azure Hybrid Benefit.", "Azure"),
+                    ("Linux & Scale (AWS)", "🟠",
+                     "Optimized for RHEL/RPM-based footprints. Graviton ARM processors.", "AWS"),
+                    ("Container & Data (GCP)", "🔵",
+                     "Optimized for Ubuntu/Debian & Kubernetes (GKE). AI data pipelines.", "GCP"),
+                    ("Database & Legacy Bridge (Oracle/OCI)", "🔴",
+                     "Native home for Oracle Linux/Solaris. Oracle Database backends.", "OCI"),
+                    ("Sovereign-First (US Gov / High-Reg)", "🛡️",
+                     "Compliance-driven: FedRAMP High, ITAR, CJIS regions.", "GovCloud"),
+                ]
+                custom_profiles = st.session_state.get("a5_custom_cloud_profiles", [])
+                all_profiles = CLOUD_PROFILES + custom_profiles
+                for name, emoji, desc, key in all_profiles:
+                    col1, col2 = st.columns([1, 10])
+                    with col1:
+                        st.checkbox(f"{emoji}", key=f"survey_cloud_{key}", value=False)
+                    with col2:
+                        st.markdown(f"**{name}**  \n<small style='color:#4B5563;'>{desc}</small>",
+                                    unsafe_allow_html=True)
 
-                if submitted:
-                    if other_checked:
-                        st.session_state.a5_status = "cloud_other"
-                        st.rerun()
-                    elif selected_cloud:
-                        st.session_state.a5_context["cloud_provider"] = selected_cloud[0]
-                        st.session_state.a5_context["cloud_key"] = selected_cloud[1]
-                        st.session_state.a5_status = "principles_table"
-                        st.rerun()
-                    else:
-                        st.warning("Please select at least one cloud profile, or choose Other.")
+            # ── TAB 4: Web/App Servers ───────────────────────────────────────
+            with _st_ws:
+                st.markdown("**🌐 Web & App Servers** — Confirm servers in your landscape")
+                ws_df = st.session_state.ws_df
+                as_df = st.session_state.as_df
+                ws_names = sorted(ws_df["Web Server"].dropna().unique().tolist())
+                as_names = sorted(as_df["App Server"].dropna().unique().tolist())
+                st.caption(f"Web Servers: {len(ws_names)} · App Servers: {len(as_names)}")
+                wc1, wc2 = st.columns(2)
+                with wc1:
+                    st.markdown("**Web Servers**")
+                    for ws in ws_names:
+                        st.checkbox(ws, value=True, key=f"survey_ws_{ws}")
+                with wc2:
+                    st.markdown("**App Servers**")
+                    for a_s in as_names:
+                        st.checkbox(a_s, value=True, key=f"survey_as_{a_s}")
 
-            # ── "Other" cloud handling ───────────────────────────────────────
-            elif a5s == "cloud_other":
-                st.markdown("""
-                <div style="background:#FFF7ED;border:1px solid #FED7AA;border-radius:12px;
-                            padding:1rem 1.2rem;margin-bottom:1rem;">
-                  <h4 style="margin:0 0 0.4rem;color:#92400E;font-size:0.95rem;">
-                    ❓ Describe your cloud target
-                  </h4>
-                  <p style="margin:0;color:#78716C;font-size:0.82rem;">
-                    Agent 5 will research this provider and create a tailored profile for your selection.
-                  </p>
-                </div>""", unsafe_allow_html=True)
+            # ── TAB 5: Frameworks ────────────────────────────────────────────
+            with _st_fw:
+                st.markdown("**📦 Frameworks & Runtimes** — Confirm frameworks in your landscape")
+                fw_df = st.session_state.fw_df
+                fw_names = sorted(fw_df["Framework"].dropna().unique().tolist())
+                st.caption(f"{len(fw_names)} frameworks tracked")
+                fc1, fc2 = st.columns(2)
+                for i, fw in enumerate(fw_names):
+                    with (fc1 if i % 2 == 0 else fc2):
+                        st.checkbox(fw, value=True, key=f"survey_fw_{fw}")
 
-                other_cloud = st.text_input(
-                    "Which cloud provider or environment?",
-                    placeholder="e.g. IBM Cloud, Alibaba Cloud, VMware on-prem, Hybrid multi-cloud...",
-                    key="a5_other_cloud_input"
-                )
+            # ── Confirm All — Single button to consolidate ───────────────────
+            st.divider()
+            st.markdown("""
+            <div style="background:linear-gradient(135deg,#0F172A,#1E293B);
+                        border-radius:8px;padding:0.8rem 1rem;margin-bottom:0.5rem;">
+              <span style="color:#F59E0B;font-weight:700;font-size:0.85rem;">
+                🧠 Agent 5 will consolidate your selections and generate comprehensive Guiding Principles
+              </span>
+            </div>
+            """, unsafe_allow_html=True)
 
-                if st.button("🔍 Research & Add Profile", type="primary",
-                             disabled=not (key_ok and other_cloud)):
-                    with st.spinner(f"🧠 Agent 5 researching {other_cloud}..."):
-                        try:
-                            agent5 = PolicyAnalysisAgent(api_key=api_key)
-                            resp = agent5.client.chat.completions.create(
-                                model=agent5.model, max_tokens=400,
-                                messages=[{"role": "user", "content":
-                                    f"Create a brief cloud migration profile for: {other_cloud}\n\n"
-                                    f"Return ONLY JSON:\n"
-                                    f'{{\"name\": \"short profile name\", '
-                                    f'\"emoji\": \"single emoji\", '
-                                    f'\"description\": \"2-sentence description of strengths for OS migration, similar style to Azure/AWS/GCP profiles\", '
-                                    f'\"key\": \"short_key\"}}'
-                                }])
-                            text = resp.choices[0].message.content.strip()
-                            if "```" in text:
-                                text = text.split("```json")[-1].split("```")[0] if "```json" in text \
-                                       else text.split("```")[1].split("```")[0]
-                            s, e = text.find("{"), text.rfind("}")
-                            profile = json.loads(text[s:e+1]) if s != -1 and e > s else None
-                        except Exception:
-                            profile = None
+            if st.button("✅ Confirm All Selections → Generate Guiding Principles",
+                         type="primary", use_container_width=True, key="survey_confirm"):
+                # Collect OS selections
+                os_selected = [fam for fam, _, _ in get_family_display()
+                               if st.session_state.get(f"survey_os_{fam}", False) and fam != "Other"]
+                st.session_state.a5_landscape_selected = os_selected
+                st.session_state.a5_context["os_landscape"] = ", ".join(os_selected)
 
-                    if profile:
-                        new_profile = (
-                            profile.get("name", other_cloud),
-                            profile.get("emoji", "☁️"),
-                            profile.get("description", f"Custom profile for {other_cloud}"),
-                            profile.get("key", other_cloud.lower().replace(" ", "_"))
-                        )
-                        custom = st.session_state.get("a5_custom_cloud_profiles", [])
-                        custom.append(new_profile)
-                        st.session_state.a5_custom_cloud_profiles = custom
+                # Collect DB selections
+                db_selected = [fam for fam, _, _ in get_db_family_display()
+                               if st.session_state.get(f"survey_db_{fam}", False) and fam != "Other"]
+                st.session_state.a5_db_landscape_selected = db_selected
+                st.session_state.a5_context["db_landscape"] = ", ".join(db_selected)
 
-                        st.success(
-                            f"✅ **{new_profile[0]}** profile created!\n\n"
-                            f"{new_profile[1]} {new_profile[2]}\n\n"
-                            f"Returning to selection so you can choose it."
-                        )
-                        st.session_state.a5_status = "cloud_profile"
-                        import time; time.sleep(2)
-                        st.rerun()
-                    else:
-                        st.error("Could not generate profile. Please try with a more specific cloud name.")
-
-                st.divider()
-                if st.button("⏭️ Skip — Use no specific cloud preference", use_container_width=True):
+                # Collect Cloud selection
+                cloud_sel = None
+                for name, emoji, desc, key in all_profiles:
+                    if st.session_state.get(f"survey_cloud_{key}", False):
+                        cloud_sel = (name, key)
+                        break
+                if cloud_sel:
+                    st.session_state.a5_context["cloud_provider"] = cloud_sel[0]
+                    st.session_state.a5_context["cloud_key"] = cloud_sel[1]
+                else:
                     st.session_state.a5_context["cloud_provider"] = "No strong preference"
-                    st.session_state.a5_status = "principles_table"
-                    st.rerun()
+                    st.session_state.a5_context["cloud_key"] = ""
+
+                # Store WS/AS/FW context
+                ws_sel = [ws for ws in ws_names if st.session_state.get(f"survey_ws_{ws}", False)]
+                as_sel = [a_s for a_s in as_names if st.session_state.get(f"survey_as_{a_s}", False)]
+                fw_sel = [fw for fw in fw_names if st.session_state.get(f"survey_fw_{fw}", False)]
+                st.session_state.a5_context["ws_landscape"] = ", ".join(ws_sel)
+                st.session_state.a5_context["as_landscape"] = ", ".join(as_sel)
+                st.session_state.a5_context["fw_landscape"] = ", ".join(fw_sel)
+
+                # Proceed to Guiding Principles generation
+                st.session_state.a5_status = "principles_table"
+                st.rerun()
 
         # ── PHASE 0d: GUIDING PRINCIPLES TABLE ──────────────────────────────
         elif a5s == "principles_table":
