@@ -415,11 +415,11 @@ def assign_migration_waves(table_data, os_df=None, db_df=None, ws_df=None, as_df
             **item,
             "wave": wave, "wave_name": wave_name,
             "timeline": timeline, "urgency": urgency,
-            "risk_score": best_risk["risk_score"],
+            "risk_score": score,
             "days_eol": days,
         })
 
-    return sorted(waves, key=lambda x: (x["wave"], -x["risk_score"]))
+    return sorted(waves, key=lambda x: (x["wave"], -(x.get("risk_score") or 0)))
 
 
 # =============================================================================
