@@ -912,20 +912,24 @@ if _cur_page == "Discovery":
     # Nodes with matching active_states → BLUE (active/current)
     # Nodes with step_ord > current level → GRAY (upcoming)
     _step_map_order = {
-        "idle": 1, "survey": 2, "principles_table": 4,
+        "idle": 0, "survey": 2, "principles_table": 4,
         "chatting": 6, "principles": 7, "costing": 8,
         "ready": 9, "analysing": 9, "done": 11,
     }
     _cur_ord = _step_map_order.get(a5s, 0)
 
     def _fc_color(step_ord, active_states):
+        if a5s == "idle":
+            return "#334155"      # GRAY — all boxes gray on first visit
         if a5s in active_states:
-            return "#1D4ED8"  # BLUE — currently active
+            return "#1D4ED8"      # BLUE — currently active
         elif _cur_ord > step_ord:
-            return "#065F46"  # GREEN — completed
-        return "#334155"      # GRAY — upcoming
+            return "#065F46"      # GREEN — completed
+        return "#334155"          # GRAY — upcoming
 
     def _fc_border(step_ord, active_states):
+        if a5s == "idle":
+            return "#475569"
         if a5s in active_states:
             return "#60A5FA"
         elif _cur_ord > step_ord:
@@ -941,8 +945,8 @@ if _cur_page == "Discovery":
     # step_ord determines when this node turns green (done)
     # active_states determines when this node is blue (current)
     _nodes = [
-        ("1a", "1a · Preliminary\nGuiding Principles",   0*GAP, 3, 2, ["idle","survey"]),
-        ("2a", "2a · Current Landscape\nDiscovery",       1*GAP, 3, 2, ["idle","survey"]),
+        ("1a", "1a · Preliminary\nGuiding Principles",   0*GAP, 3, 2, ["survey"]),
+        ("2a", "2a · Current Landscape\nDiscovery",       1*GAP, 3, 2, ["survey"]),
         ("3a", "3a · Preliminary\nDisposition",           2*GAP, 3, 4, ["principles_table"]),
         ("5",  "5 · App\nDiscussion",                     3*GAP, 3, 6, ["chatting"]),
         ("1b", "1b · Detailed\nGuiding Principles",       4*GAP, 3, 7, ["principles"]),
@@ -1060,7 +1064,7 @@ if _cur_page == "Discovery":
 
     # ── Step-by-step guide banner ────────────────────────────────────────────
     _guide_messages = {
-        "idle":             ("1", "Open AI Advisor", "Click <b>'Open AI Advisor'</b> in the sidebar to begin the Discovery questionnaire.", "#3B82F6", "👆"),
+        "idle":             ("1", "Get Started", "Click <b>'Open AI Advisor'</b> in the sidebar to begin. The flowchart will light up as you progress.", "#3B82F6", "👆"),
         "survey":           ("2", "Complete Survey", "Fill in all 4 category tabs (Cloud, Upgrade, Replacement, Principles) then click <b>'Confirm All Categories'</b>.", "#7C3AED", "📝"),
         "principles_table": ("3", "Review Principles", "Review the generated Guiding Principles, costs, and wave plan. Then click <b>'Proceed to Policy Chat'</b>.", "#059669", "📋"),
         "chatting":         ("4", "Policy Chat", "Answer Agent 5's questions about compliance, budgets, and risk tolerance. After 4+ exchanges, click <b>'Proceed to Guiding Principles'</b>.", "#D97706", "💬"),
