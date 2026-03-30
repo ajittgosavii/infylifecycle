@@ -934,20 +934,26 @@ if _cur_page == "Discovery":
 
     # ── Progress stepper bar ────────────────────────────────────────────────────
     steps    = ["🗺️ OS", "🗄️ DB", "☁️ Cloud", "📋 Principles & Costs", "💬 Policy Chat", "⚖️ GP Generate", "💰 Cost Intel", "🧠 Analysis", "✅ Done"]
-    # Survey covers OS+DB+Cloud (steps 0-2), then principles_table is step 3
-    _survey_step = 0  # OS/DB/Cloud all happen in survey
     step_map = {"idle":0,"survey":0,
                 "principles_table":3,
                 "chatting":4,"principles":5,"costing":6,
                 "ready":6,"analysing":7,"done":8}
-    # When in principles_table or later, mark OS/DB/Cloud as done
-    if a5s in ("principles_table","chatting","principles","costing","ready","analysing","done"):
-        step_map["principles_table"] = 3  # already correct
     cur_step = step_map.get(a5s, 0)
-    s_cols   = st.columns(len(steps))
+
+    # For "survey" state, OS/DB/Cloud (steps 0-2) are all being worked on simultaneously
+    # Show them as active (yellow), not done
+    _survey_active = a5s in ("idle", "survey")
+
+    s_cols = st.columns(len(steps))
     for i, (col, lbl) in enumerate(zip(s_cols, steps)):
         with col:
-            if i < cur_step:
+            if _survey_active and i <= 2:
+                # During survey, OS/DB/Cloud are all active
+                st.markdown(f"<div style='text-align:center;color:#F59E0B;font-weight:700;font-size:0.8rem;'>● {lbl}</div>", unsafe_allow_html=True)
+            elif _survey_active and i > 2:
+                # Everything after Cloud is pending during survey
+                st.markdown(f"<div style='text-align:center;color:#94A3B8;font-size:0.8rem;'>○ {lbl}</div>", unsafe_allow_html=True)
+            elif i < cur_step:
                 st.markdown(f"<div style='text-align:center;color:#10B981;font-size:0.8rem;'>✅ {lbl}</div>", unsafe_allow_html=True)
             elif i == cur_step:
                 st.markdown(f"<div style='text-align:center;color:#F59E0B;font-weight:700;font-size:0.8rem;'>● {lbl}</div>", unsafe_allow_html=True)
@@ -988,58 +994,67 @@ if _cur_page == "Discovery":
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # ── Floating AI Chat Button (bottom-right corner) ────────────────────────
-    # Auto-open chat if user has already started the survey process
-    if a5s not in ("idle",) and not st.session_state.get("show_chat", False):
-        st.session_state["show_chat"] = True
+    # ── Floating AI Chat Button (bottom-right corner, always visible) ────────
     _chat_open = st.session_state.get("show_chat", False)
 
-    if not _chat_open:
-        # Show a prominent button in bottom-right area to open the chat
-        st.markdown("<div style='height:2rem;'></div>", unsafe_allow_html=True)
-        _open_col1, _open_col2, _open_col3 = st.columns([3, 2, 1])
-        with _open_col3:
-            if st.button("🧠 AI Advisor\n💬 Click to Start", key="open_chat_btn",
-                         use_container_width=True, type="primary"):
-                st.session_state["show_chat"] = True
+    # Always show the flashing fixed-position floating button in bottom-right
+    _float_text = "✕ Close Chat" if _chat_open else "🧠 Start AI Advisor"
+    _float_bg = "linear-gradient(135deg,#DC2626,#EF4444)" if _chat_open else "linear-gradient(135deg,#7C3AED,#9333EA)"
+    _float_anim = "" if _chat_open else "animation: float-pulse 2s ease-in-out infinite;"
+    st.markdown(f"""
+    <style>
+    .floating-chat-trigger {{
+        position: fixed; bottom: 30px; right: 30px; z-index: 9999;
+        background: {_float_bg};
+        color: white; border-radius: 50px; padding: 14px 26px;
+        font-size: 0.95rem; font-weight: 700;
+        display: flex; align-items: center; gap: 10px;
+        box-shadow: 0 6px 24px rgba(124,58,237,0.5);
+        {_float_anim}
+        pointer-events: none;
+    }}
+    @keyframes float-pulse {{
+        0%, 100% {{ box-shadow: 0 6px 24px rgba(124,58,237,0.5); }}
+        50% {{ box-shadow: 0 6px 36px rgba(124,58,237,0.9), 0 0 60px rgba(124,58,237,0.3); }}
+    }}
+    .float-dot {{
+        width: 12px; height: 12px; border-radius: 50%;
+        background: #34D399; animation: fdot 1s infinite;
+    }}
+    @keyframes fdot {{ 0%,100%{{opacity:1;}} 50%{{opacity:0.3;}} }}
+    </style>
+    <div class="floating-chat-trigger">
+        <div class="float-dot"></div>
+        {_float_text}
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Real Streamlit toggle button (always visible, below the GP cards)
+    _btn_col1, _btn_col2, _btn_col3 = st.columns([2, 2, 2])
+    with _btn_col3:
+        _btn_label = "✕ Close AI Chat" if _chat_open else "🧠 Open AI Advisor"
+        if st.button(_btn_label, key="toggle_chat_btn",
+                     use_container_width=True,
+                     type="secondary" if _chat_open else "primary"):
+            st.session_state["show_chat"] = not _chat_open
+            # If opening fresh, reset to survey state
+            if not _chat_open:
+                if st.session_state.get("a5_status") == "idle":
+                    st.session_state["a5_status"] = "survey"
+            st.rerun()
+
+    # If user has prior session, show a reset option
+    if a5s not in ("idle", "survey") and not _chat_open:
+        with _btn_col1:
+            if st.button("🔄 Start Fresh", key="reset_session_btn", use_container_width=True):
+                PolicyAnalysisAgent.reset()
+                st.session_state["show_chat"] = False
+                st.session_state.pop("a5_principles_table_data", None)
+                st.session_state.pop("a5_costed_data", None)
                 st.rerun()
 
-        # Inject flashing fixed-position indicator in bottom-right
-        st.markdown("""
-        <style>
-        .floating-indicator {
-            position: fixed; bottom: 30px; right: 30px; z-index: 9999;
-            background: linear-gradient(135deg, #7C3AED, #9333EA);
-            color: white; border-radius: 50px; padding: 12px 22px;
-            font-size: 0.9rem; font-weight: 700;
-            display: flex; align-items: center; gap: 10px;
-            box-shadow: 0 6px 24px rgba(124,58,237,0.5);
-            animation: float-pulse 2s ease-in-out infinite;
-            pointer-events: none;
-        }
-        @keyframes float-pulse {
-            0%, 100% { box-shadow: 0 6px 24px rgba(124,58,237,0.5); }
-            50% { box-shadow: 0 6px 36px rgba(124,58,237,0.9), 0 0 60px rgba(124,58,237,0.3); }
-        }
-        .float-dot {
-            width: 12px; height: 12px; border-radius: 50%;
-            background: #34D399; animation: fdot 1s infinite;
-        }
-        @keyframes fdot { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
-        </style>
-        <div class="floating-indicator">
-            <div class="float-dot"></div>
-            🧠 AI Advisor — Click above ↑
-        </div>
-        """, unsafe_allow_html=True)
-
-        # Hide the strategist panel below
+    if not _chat_open:
         _show_strategist = False
-    else:
-        # Chat is open — show close button
-        if st.button("✕ Close AI Chat", key="close_chat_btn", use_container_width=True):
-            st.session_state["show_chat"] = False
-            st.rerun()
 
 
 # ════════════════════════════════════════════════════════════════════════════════
