@@ -912,7 +912,7 @@ if _cur_page == "Discovery":
     # Nodes with matching active_states → BLUE (active/current)
     # Nodes with step_ord > current level → GRAY (upcoming)
     _step_map_order = {
-        "idle": 0, "survey": 2, "principles_table": 4,
+        "idle": 1, "survey": 2, "principles_table": 4,
         "chatting": 6, "principles": 7, "costing": 8,
         "ready": 9, "analysing": 9, "done": 11,
     }
@@ -953,7 +953,7 @@ if _cur_page == "Discovery":
         ("4a", "4a · Preliminary\nWave Planning",         2.5*GAP, 5.5, 4, ["principles_table"]),
         ("FC", "Final Costs &\nBusiness Case",            6*GAP, 5.5, 10, ["done"]),
         # Lower branch
-        ("2b", "2b · Utilization &\nCharacteristics",     1.5*GAP, 0.5, 2, ["idle","survey"]),
+        ("2b", "2b · Utilization &\nCharacteristics",     1.5*GAP, 0.5, 2, ["survey"]),
         ("6a", "6a · Preliminary\nCost Analysis",         2.5*GAP, 0.5, 8, ["costing"]),
     ]
 
@@ -1010,7 +1010,7 @@ if _cur_page == "Discovery":
         by = (1-t)**3*y0 + 3*(1-t)**2*t*cy0 + 3*(1-t)*t**2*cy1 + t**3*y1
         fig.add_trace(go.Scatter(
             x=bx.tolist(), y=by.tolist(), mode="lines",
-            line=dict(color="#94A3B8", width=1.5, dash="dot"),
+            line=dict(color="#94A3B8", width=1.5),
             hoverinfo="skip", showlegend=False
         ))
         # Arrowhead at end
