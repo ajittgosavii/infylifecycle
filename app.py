@@ -864,41 +864,113 @@ if _cur_page == "Discovery":
     a5s = st.session_state.get("a5_status", "idle")
     _chat_open = st.session_state.get("show_chat", False)
 
-    # ── Flowchart at top (visual indicator of progress) ──────────────────────
-    _fc_steps = [
-        ("1a", "Preliminary\nGuiding Principles", ["idle", "survey"]),
-        ("2a", "Current Landscape\nDiscovery", ["idle", "survey"]),
-        ("3a", "Preliminary\nDisposition", ["principles_table"]),
-        ("4a", "Preliminary\nWave Planning", ["principles_table"]),
-        ("5",  "App\nDiscussion", ["chatting"]),
-        ("1b", "Detailed\nGuiding Principles", ["principles"]),
-        ("6a", "Preliminary\nCost Analysis", ["costing"]),
-        ("3b", "Final\nDisposition", ["ready", "analysing"]),
-        ("4b", "Final\nWave Planning", ["done"]),
-    ]
-    _step_map_order = {
-        "idle": 0, "survey": 0, "principles_table": 2,
-        "chatting": 4, "principles": 5, "costing": 6,
-        "ready": 7, "analysing": 7, "done": 8,
-    }
+    # ── Flowchart using Plotly (matches hand-drawn Discovery diagram) ────────
+    import plotly.graph_objects as go
 
-    _fc_html = "<div class='flowchart-container'>"
-    for i, (step_id, label, statuses) in enumerate(_fc_steps):
-        cur_order = _step_map_order.get(a5s, 0)
-        if a5s in statuses:
-            css_class = "fc-active"
-        elif cur_order > i:
-            css_class = "fc-done"
-        else:
-            css_class = "fc-idle"
-        label_html = label.replace("\n", "<br>")
-        _fc_html += f"<div class='fc-block {css_class}' title='Step {step_id}'>"
-        _fc_html += f"<div style='font-size:0.65rem;opacity:0.7;margin-bottom:2px;'>{step_id}</div>"
-        _fc_html += f"{label_html}</div>"
-        if i < len(_fc_steps) - 1:
-            _fc_html += "<span class='fc-arrow'>→</span>"
-    _fc_html += "</div>"
-    st.markdown(_fc_html, unsafe_allow_html=True)
+    _step_map_order = {
+        "idle": 0, "survey": 1, "principles_table": 3,
+        "chatting": 5, "principles": 6, "costing": 7,
+        "ready": 8, "analysing": 8, "done": 10,
+    }
+    _cur_ord = _step_map_order.get(a5s, 0)
+
+    def _fc_color(step_ord, active_states):
+        if a5s in active_states:
+            return "#1D4ED8"  # active blue
+        elif _cur_ord > step_ord:
+            return "#065F46"  # done green
+        return "#334155"  # idle gray
+
+    def _fc_border(step_ord, active_states):
+        if a5s in active_states:
+            return "#60A5FA"
+        elif _cur_ord > step_ord:
+            return "#10B981"
+        return "#475569"
+
+    # Node definitions: (id, label, x, y, step_ord, active_states)
+    # Main row y=2, upper branch y=3.2, lower branch y=0.8
+    _nodes = [
+        ("1a", "1a\nPreliminary\nGuiding Principles", 1, 2, 0, ["idle","survey"]),
+        ("2a", "2a\nCurrent Landscape\nDiscovery",     3, 2, 1, ["survey"]),
+        ("3a", "3a\nPreliminary\nDisposition",         5, 2, 3, ["principles_table"]),
+        ("4a", "4a\nPreliminary\nWave Planning",       6, 3.3, 4, ["principles_table"]),
+        ("5",  "5\nApp\nDiscussion",                   7, 2, 5, ["chatting"]),
+        ("1b", "1b\nDetailed\nGuiding Principles",     9, 2, 6, ["principles"]),
+        ("2b", "2b\nUtilization &\nCharacteristics",   4, 0.7, 2, ["survey"]),
+        ("6a", "6a\nPreliminary\nCost Analysis",       6, 0.7, 7, ["costing"]),
+        ("3b", "3b\nFinal\nDisposition",               11, 2, 8, ["ready","analysing"]),
+        ("4b", "4b\nFinal\nWave Planning",             13, 2, 9, ["done"]),
+        ("FC", "Final Costs &\nBusiness Case",         13, 3.3, 9, ["done"]),
+        ("AP", "Approvals",                            15, 2, 10, ["done"]),
+    ]
+
+    # Edges: (from_x, from_y, to_x, to_y)
+    _edges = [
+        (1,2, 3,2), (3,2, 5,2), (5,2, 7,2), (7,2, 9,2),    # main flow 1a→2a→3a→5→1b
+        (9,2, 11,2), (11,2, 13,2), (13,2, 15,2),            # 1b→3b→4b→Approvals
+        (5,2, 6,3.3),                                         # 3a ↑ 4a (branch up)
+        (6,3.3, 7,2),                                         # 4a → 5
+        (3,2, 4,0.7),                                         # 2a ↓ 2b (branch down)
+        (4,0.7, 6,0.7),                                       # 2b → 6a
+        (6,0.7, 7,2),                                         # 6a → 5
+        (11,2, 13,3.3),                                        # 3b ↑ Final Costs
+        (13,3.3, 13,2),                                        # Final Costs → 4b
+    ]
+
+    fig = go.Figure()
+
+    # Draw edges (arrows)
+    for x0, y0, x1, y1 in _edges:
+        fig.add_trace(go.Scatter(
+            x=[x0, x1], y=[y0, y1], mode="lines",
+            line=dict(color="#64748B", width=2),
+            hoverinfo="skip", showlegend=False
+        ))
+        # Arrowhead
+        fig.add_annotation(
+            x=x1, y=y1, ax=x0, ay=y0,
+            xref="x", yref="y", axref="x", ayref="y",
+            showarrow=True, arrowhead=3, arrowsize=1.2,
+            arrowwidth=2, arrowcolor="#64748B",
+            opacity=0
+        )
+
+    # Draw nodes
+    for nid, label, x, y, step_ord, active_states in _nodes:
+        bg = _fc_color(step_ord, active_states)
+        border = _fc_border(step_ord, active_states)
+        text_color = "white" if bg != "#334155" else "#94A3B8"
+        fig.add_shape(
+            type="rect",
+            x0=x-0.8, y0=y-0.45, x1=x+0.8, y1=y+0.45,
+            fillcolor=bg, line=dict(color=border, width=2),
+            layer="below"
+        )
+        fig.add_annotation(
+            x=x, y=y, text=label.replace("\n", "<br>"),
+            showarrow=False,
+            font=dict(size=10, color=text_color, family="Arial"),
+            align="center"
+        )
+
+    # Layout
+    fig.update_layout(
+        plot_bgcolor="#0F172A",
+        paper_bgcolor="#0F172A",
+        xaxis=dict(visible=False, range=[-0.5, 16.5]),
+        yaxis=dict(visible=False, range=[-0.2, 4.2]),
+        margin=dict(l=10, r=10, t=30, b=10),
+        height=280,
+        annotations=[
+            dict(x=0, y=4.0, text="<i>Discovery</i>", showarrow=False,
+                 font=dict(size=12, color="#94A3B8", family="Arial"), xanchor="left"),
+            dict(x=0, y=-0.0, text="<i>Migrate →</i>", showarrow=False,
+                 font=dict(size=11, color="#94A3B8", family="Arial"), xanchor="left"),
+        ]
+    )
+
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
     st.divider()
 
