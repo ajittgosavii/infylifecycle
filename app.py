@@ -1233,12 +1233,35 @@ elif _cur_page == "History":
                     ):
                         msgs = _load_messages(sess["session"])
                         st.caption(f"{len(msgs)} messages")
-                        for msg in msgs[-10:]:  # show last 10 messages
+                        for msg in msgs[-10:]:
                             role_icon = "🧠" if msg["role"] == "assistant" else "👤"
                             st.markdown(f"{role_icon} **{msg['role']}**: {msg['content'][:200]}{'...' if len(msg['content'])>200 else ''}")
-                        _dc1, _dc2 = st.columns([3, 1])
+
+                        _dc1, _dc2, _dc3 = st.columns([2, 2, 1])
+                        with _dc1:
+                            if st.button("▶ Resume Chat", key=f"hres_{sess['session']}",
+                                         type="primary", use_container_width=True):
+                                st.session_state["a5_session_id"] = sess["session"]
+                                _sess_status = sess.get("status", "chatting")
+                                if _sess_status in ("chatting", "ready", "done"):
+                                    st.session_state["a5_status"] = _sess_status
+                                else:
+                                    st.session_state["a5_status"] = "chatting"
+                                st.session_state["show_chat"] = True
+                                st.session_state["current_page"] = "Discovery"
+                                st.rerun()
                         with _dc2:
-                            if st.button("🗑 Delete", key=f"hdel_{sess['session']}"):
+                            if st.button("📋 Load Principles", key=f"hload_{sess['session']}",
+                                         use_container_width=True,
+                                         help="Load this session's context and jump to GP generation"):
+                                st.session_state["a5_session_id"] = sess["session"]
+                                st.session_state["a5_status"] = "chatting"
+                                st.session_state["show_chat"] = True
+                                st.session_state["current_page"] = "Discovery"
+                                st.rerun()
+                        with _dc3:
+                            if st.button("🗑 Delete", key=f"hdel_{sess['session']}",
+                                         use_container_width=True):
                                 _delete_session(sess["session"])
                                 st.rerun()
             else:
