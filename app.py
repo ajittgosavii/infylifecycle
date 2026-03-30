@@ -873,19 +873,23 @@ if _cur_page == "Discovery":
     # ── Flowchart using Plotly (matches hand-drawn Discovery diagram) ────────
     import plotly.graph_objects as go
 
+    # Step ordering: maps a5_status to a numeric progress level
+    # Nodes with step_ord < current level → GREEN (done)
+    # Nodes with matching active_states → BLUE (active/current)
+    # Nodes with step_ord > current level → GRAY (upcoming)
     _step_map_order = {
-        "idle": 0, "survey": 1, "principles_table": 3,
-        "chatting": 5, "principles": 6, "costing": 7,
-        "ready": 8, "analysing": 8, "done": 10,
+        "idle": 0, "survey": 2, "principles_table": 4,
+        "chatting": 6, "principles": 7, "costing": 8,
+        "ready": 9, "analysing": 9, "done": 11,
     }
     _cur_ord = _step_map_order.get(a5s, 0)
 
     def _fc_color(step_ord, active_states):
         if a5s in active_states:
-            return "#1D4ED8"
+            return "#1D4ED8"  # BLUE — currently active
         elif _cur_ord > step_ord:
-            return "#065F46"
-        return "#334155"
+            return "#065F46"  # GREEN — completed
+        return "#334155"      # GRAY — upcoming
 
     def _fc_border(step_ord, active_states):
         if a5s in active_states:
@@ -900,22 +904,23 @@ if _cur_page == "Discovery":
     GAP = 3.5  # horizontal gap between nodes
 
     # Node positions: (id, label, x, y, step_ord, active_states)
-    # Main row y=3, upper y=5.5, lower y=0.5
+    # step_ord determines when this node turns green (done)
+    # active_states determines when this node is blue (current)
     _nodes = [
-        ("1a", "1a · Preliminary\nGuiding Principles",   0*GAP, 3, 0, ["idle","survey"]),
-        ("2a", "2a · Current Landscape\nDiscovery",       1*GAP, 3, 1, ["survey"]),
-        ("3a", "3a · Preliminary\nDisposition",           2*GAP, 3, 3, ["principles_table"]),
-        ("5",  "5 · App\nDiscussion",                     3*GAP, 3, 5, ["chatting"]),
-        ("1b", "1b · Detailed\nGuiding Principles",       4*GAP, 3, 6, ["principles"]),
-        ("3b", "3b · Final\nDisposition",                 5*GAP, 3, 8, ["ready","analysing"]),
-        ("4b", "4b · Final\nWave Planning",               6*GAP, 3, 9, ["done"]),
-        ("AP", "Approvals",                               7*GAP, 3, 10, ["done"]),
+        ("1a", "1a · Preliminary\nGuiding Principles",   0*GAP, 3, 2, ["idle","survey"]),
+        ("2a", "2a · Current Landscape\nDiscovery",       1*GAP, 3, 2, ["idle","survey"]),
+        ("3a", "3a · Preliminary\nDisposition",           2*GAP, 3, 4, ["principles_table"]),
+        ("5",  "5 · App\nDiscussion",                     3*GAP, 3, 6, ["chatting"]),
+        ("1b", "1b · Detailed\nGuiding Principles",       4*GAP, 3, 7, ["principles"]),
+        ("3b", "3b · Final\nDisposition",                 5*GAP, 3, 9, ["ready","analysing"]),
+        ("4b", "4b · Final\nWave Planning",               6*GAP, 3, 10, ["done"]),
+        ("AP", "Approvals",                               7*GAP, 3, 11, ["done"]),
         # Upper branch
         ("4a", "4a · Preliminary\nWave Planning",         2.5*GAP, 5.5, 4, ["principles_table"]),
-        ("FC", "Final Costs &\nBusiness Case",            6*GAP, 5.5, 9, ["done"]),
+        ("FC", "Final Costs &\nBusiness Case",            6*GAP, 5.5, 10, ["done"]),
         # Lower branch
-        ("2b", "2b · Utilization &\nCharacteristics",     1.5*GAP, 0.5, 2, ["survey"]),
-        ("6a", "6a · Preliminary\nCost Analysis",         2.5*GAP, 0.5, 7, ["costing"]),
+        ("2b", "2b · Utilization &\nCharacteristics",     1.5*GAP, 0.5, 2, ["idle","survey"]),
+        ("6a", "6a · Preliminary\nCost Analysis",         2.5*GAP, 0.5, 8, ["costing"]),
     ]
 
     # Edges connect from box edge to box edge
