@@ -991,7 +991,9 @@ if _cur_page == "Discovery":
             if st.button("🧠 Start", key="open_chat_btn",
                          use_container_width=True, type="primary"):
                 st.session_state["show_chat"] = True
-                if st.session_state.get("a5_status") == "idle":
+                # Always start with survey when opening chat
+                _cur_a5 = st.session_state.get("a5_status", "idle")
+                if _cur_a5 in ("idle",):
                     st.session_state["a5_status"] = "survey"
                 st.rerun()
 
@@ -1489,13 +1491,6 @@ with tab_fw:
 
 # ────────────────── Strategist Panel (shown on Discovery page) ─────────────────
 if _show_strategist:
-    # Close button at top of chat panel
-    _close_col1, _close_col2 = st.columns([5, 1])
-    with _close_col2:
-        if st.button("✕ Close", key="close_chat_top", use_container_width=True):
-            st.session_state["show_chat"] = False
-            st.rerun()
-
     st.markdown("""
     <div style="background:linear-gradient(135deg,#1a1a2e,#16213e,#0f3460);
                 padding:1.2rem 1.8rem;border-radius:12px;color:white;margin-bottom:1.5rem;">
