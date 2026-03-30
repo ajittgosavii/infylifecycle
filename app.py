@@ -1335,6 +1335,163 @@ elif _cur_page == "History":
 
         st.caption("Note: Exports are generated on-demand. This log tracks when they were created.")
 
+elif _cur_page == "Future Blueprint":
+    # ════════════════════════════════════════════════════════════════════════
+    # FUTURE BLUEPRINT — Target state after all migrations complete
+    # ════════════════════════════════════════════════════════════════════════
+    _gp_data = st.session_state.get("a5_principles_table_data")
+    if not _gp_data:
+        st.markdown("""
+        <div style="text-align:center;padding:3rem 2rem;">
+            <div style="font-size:2.5rem;margin-bottom:1rem;">📐</div>
+            <h2 style="color:#1E293B;">Future Blueprint</h2>
+            <p style="color:#64748B;">Complete the Discovery survey first to generate the target state.</p>
+        </div>""", unsafe_allow_html=True)
+    else:
+        import plotly.graph_objects as go
+
+        _a5_final = st.session_state.get("a5_status") == "done"
+        _cloud = st.session_state.get("a5_context", {}).get("cloud_provider", "Multi-Cloud")
+
+        st.subheader("📐 Future Blueprint — Target State Architecture")
+        if _a5_final:
+            st.success("Based on **Final Agent 5 Recommendations** — your post-migration target state.")
+        else:
+            st.info("Based on preliminary survey data. Complete all Discovery steps for the final blueprint.")
+
+        # ── Current vs Target comparison ─────────────────────────────────────
+        st.markdown("##### 🔄 Current State → Target State")
+        _transitions = []
+        for row in _gp_data:
+            tech = row.get("technology", row.get("os_family", ""))
+            cat = row.get("category", "OS")
+            cloud = row.get("cloud_target", _cloud)
+            upgrade = row.get("upgrade_principle", "")
+            replace = row.get("replacement_principle", "")
+
+            # Determine target
+            if "Replace" in replace or "Migrate" in replace or "Mandatory" in replace:
+                action = "REPLACE"
+                target = replace.split("→")[-1].strip() if "→" in replace else replace[:50]
+            elif "Upgrade" in upgrade or "COTS" in upgrade:
+                action = "UPGRADE"
+                target = upgrade.split("→")[-1].strip() if "→" in upgrade else upgrade[:50]
+            else:
+                action = "RETAIN"
+                target = tech
+
+            _transitions.append({
+                "Category": cat, "Current": tech, "Action": action,
+                "Target": target, "Cloud": cloud
+            })
+
+        # Summary metrics
+        _replace_count = sum(1 for t in _transitions if t["Action"] == "REPLACE")
+        _upgrade_count = sum(1 for t in _transitions if t["Action"] == "UPGRADE")
+        _retain_count = sum(1 for t in _transitions if t["Action"] == "RETAIN")
+
+        m1, m2, m3, m4 = st.columns(4)
+        with m1: st.metric("Total Technologies", len(_transitions))
+        with m2: st.metric("🔁 Replace", _replace_count)
+        with m3: st.metric("⬆️ Upgrade", _upgrade_count)
+        with m4: st.metric("✅ Retain", _retain_count)
+
+        # ── Sankey Diagram: Current → Action → Target Cloud ──────────────────
+        st.divider()
+        st.markdown("##### 🔀 Migration Flow (Sankey Diagram)")
+
+        # Build Sankey nodes and links
+        _categories = list(set(t["Category"] for t in _transitions))
+        _actions = ["REPLACE", "UPGRADE", "RETAIN"]
+        _clouds = list(set(t["Cloud"] for t in _transitions if t["Cloud"]))
+
+        _nodes = _categories + _actions + _clouds
+        _node_colors = (
+            ["#3B82F6"] * len(_categories) +
+            ["#DC2626", "#F59E0B", "#10B981"] +
+            ["#6366F1"] * len(_clouds)
+        )
+
+        _links_source = []
+        _links_target = []
+        _links_value = []
+        _links_color = []
+
+        # Category → Action
+        for cat in _categories:
+            for action in _actions:
+                count = sum(1 for t in _transitions if t["Category"] == cat and t["Action"] == action)
+                if count > 0:
+                    _links_source.append(_nodes.index(cat))
+                    _links_target.append(_nodes.index(action))
+                    _links_value.append(count)
+                    _links_color.append({"REPLACE":"rgba(220,38,38,0.3)","UPGRADE":"rgba(245,158,11,0.3)",
+                                         "RETAIN":"rgba(16,185,129,0.3)"}.get(action, "rgba(100,100,100,0.2)"))
+
+        # Action → Cloud
+        for action in _actions:
+            for cloud in _clouds:
+                count = sum(1 for t in _transitions if t["Action"] == action and t["Cloud"] == cloud)
+                if count > 0:
+                    _links_source.append(_nodes.index(action))
+                    _links_target.append(_nodes.index(cloud))
+                    _links_value.append(count)
+                    _links_color.append("rgba(99,102,241,0.3)")
+
+        sankey_fig = go.Figure(go.Sankey(
+            node=dict(pad=15, thickness=20, label=_nodes, color=_node_colors),
+            link=dict(source=_links_source, target=_links_target,
+                     value=_links_value, color=_links_color)
+        ))
+        sankey_fig.update_layout(height=400, margin=dict(l=10, r=10, t=10, b=10))
+        st.plotly_chart(sankey_fig, use_container_width=True)
+
+        # ── Target State Table ───────────────────────────────────────────────
+        st.divider()
+        st.markdown("##### 📋 Target State Details")
+        _target_df = pd.DataFrame(_transitions)
+
+        # Color code the Action column
+        st.dataframe(
+            _target_df,
+            use_container_width=True, hide_index=True, height=400,
+            column_config={
+                "Category": st.column_config.TextColumn(width=100),
+                "Current": st.column_config.TextColumn("Current State", width=150),
+                "Action": st.column_config.TextColumn(width=90),
+                "Target": st.column_config.TextColumn("Target State", width=250),
+                "Cloud": st.column_config.TextColumn("Cloud Target", width=120),
+            }
+        )
+
+        # ── Target Cloud Distribution ────────────────────────────────────────
+        st.divider()
+        st.markdown("##### ☁️ Target Cloud Distribution")
+        _cloud_counts = {}
+        for t in _transitions:
+            c = t["Cloud"] or "On-Prem"
+            _cloud_counts[c] = _cloud_counts.get(c, 0) + 1
+
+        pie_fig = go.Figure(go.Pie(
+            labels=list(_cloud_counts.keys()),
+            values=list(_cloud_counts.values()),
+            hole=0.4,
+            marker_colors=["#3B82F6", "#F59E0B", "#10B981", "#8B5CF6", "#EF4444", "#6366F1"]
+        ))
+        pie_fig.update_layout(height=350, margin=dict(l=10, r=10, t=30, b=10))
+        st.plotly_chart(pie_fig, use_container_width=True)
+
+        # ── Key Takeaways ────────────────────────────────────────────────────
+        st.divider()
+        st.markdown("##### 💡 Key Blueprint Takeaways")
+        st.markdown(f"""
+        - **{_replace_count} technologies** will be replaced with modern alternatives
+        - **{_upgrade_count} technologies** will be upgraded to supported versions
+        - **{_retain_count} technologies** are already on supported versions and will be retained
+        - **Primary cloud target:** {_cloud}
+        - **Project window:** Apr 2026 → Jun 2028
+        """)
+
 elif _cur_page in ("Disposition", "Wave Planning", "Business Case", "Workload Optimization"):
     # These pages show Agent 5 output when available, otherwise prompt to complete Discovery
     _a5_final = st.session_state.get("a5_status") == "done"
