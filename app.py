@@ -1442,6 +1442,133 @@ elif _cur_page in ("Disposition", "Wave Planning", "Business Case", "Workload Op
             with wm3: st.metric("🟡 Plan", sum(1 for r in wave_data if r.get("wave")==3))
             with wm4: st.metric("🟢 Monitor", sum(1 for r in wave_data if r.get("wave")==4))
 
+            # ── Gantt Chart ───────────────────────────────────────────────────
+            import plotly.graph_objects as go
+            from datetime import date as _dt_date
+            from dateutil.relativedelta import relativedelta
+
+            st.markdown("##### 📊 Migration Gantt Chart")
+            _proj_start = _dt_date(2026, 4, 1)
+            _wave_timelines = {
+                1: (_proj_start, _proj_start + relativedelta(months=6)),
+                2: (_proj_start + relativedelta(months=3), _proj_start + relativedelta(months=12)),
+                3: (_proj_start + relativedelta(months=9), _proj_start + relativedelta(months=18)),
+                4: (_proj_start + relativedelta(months=12), _proj_start + relativedelta(months=24)),
+            }
+            _gantt_colors = {1: "#DC2626", 2: "#EA580C", 3: "#CA8A04", 4: "#16A34A"}
+
+            gantt_fig = go.Figure()
+            _gantt_items = []
+            for r in wave_data:
+                w = r.get("wave", 4)
+                start, end = _wave_timelines.get(w, (_proj_start, _proj_start + relativedelta(months=24)))
+                _gantt_items.append({
+                    "tech": r.get("technology", ""),
+                    "cat": r.get("category", ""),
+                    "wave": w,
+                    "start": start,
+                    "end": end,
+                    "score": r.get("risk_score") or 50,
+                })
+
+            # Sort by wave then category
+            _gantt_items.sort(key=lambda x: (x["wave"], x["cat"], x["tech"]))
+
+            for i, item in enumerate(_gantt_items):
+                gantt_fig.add_trace(go.Bar(
+                    x=[(item["end"] - item["start"]).days],
+                    y=[f"{item['tech']} ({item['cat']})"],
+                    base=[(item["start"] - _proj_start).days],
+                    orientation="h",
+                    marker_color=_gantt_colors.get(item["wave"], "#64748B"),
+                    hovertemplate=(
+                        f"<b>{item['tech']}</b><br>"
+                        f"Wave {item['wave']} · {item['cat']}<br>"
+                        f"Risk Score: {item['score']}<br>"
+                        f"{item['start'].strftime('%b %Y')} → {item['end'].strftime('%b %Y')}"
+                        "<extra></extra>"
+                    ),
+                    showlegend=False,
+                ))
+
+            # Add wave legend
+            for w, color in _gantt_colors.items():
+                names = {1: "Wave 1: Critical (0-6m)", 2: "Wave 2: High (3-12m)",
+                         3: "Wave 3: Plan (9-18m)", 4: "Wave 4: Monitor (12-24m)"}
+                gantt_fig.add_trace(go.Bar(
+                    x=[0], y=[""], orientation="h", marker_color=color,
+                    name=names.get(w, f"Wave {w}"), showlegend=True
+                ))
+
+            # X-axis as months from project start
+            _tick_dates = [_proj_start + relativedelta(months=m) for m in range(0, 27, 3)]
+            gantt_fig.update_layout(
+                xaxis=dict(
+                    tickvals=[(d - _proj_start).days for d in _tick_dates],
+                    ticktext=[d.strftime("%b %Y") for d in _tick_dates],
+                    title="Project Timeline",
+                ),
+                yaxis=dict(autorange="reversed", title=""),
+                height=max(400, len(_gantt_items) * 28),
+                margin=dict(l=10, r=10, t=30, b=40),
+                barmode="overlay",
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5),
+            )
+            st.plotly_chart(gantt_fig, use_container_width=True)
+
+            # ── Risk Bubble Chart ────────────────────────────────────────────
+            st.divider()
+            st.markdown("##### 🎯 Risk vs Days-to-EOL Bubble Chart")
+            _bubble_data = []
+            for r in wave_data:
+                score = r.get("risk_score") or 50
+                days = r.get("days_eol") or 999
+                if days == 999: days = 900
+                _bubble_data.append({
+                    "tech": r.get("technology", ""),
+                    "cat": r.get("category", ""),
+                    "wave": r.get("wave", 4),
+                    "score": score,
+                    "days": days,
+                })
+
+            bubble_fig = go.Figure()
+            _cat_colors = {"OS": "#3B82F6", "Database": "#8B5CF6", "Web Server": "#10B981",
+                          "App Server": "#F59E0B", "Framework": "#EF4444"}
+            for cat, color in _cat_colors.items():
+                cat_items = [b for b in _bubble_data if b["cat"] == cat]
+                if not cat_items: continue
+                bubble_fig.add_trace(go.Scatter(
+                    x=[b["days"] for b in cat_items],
+                    y=[b["score"] for b in cat_items],
+                    mode="markers+text",
+                    marker=dict(size=[max(12, b["score"]//2) for b in cat_items],
+                               color=color, opacity=0.7, line=dict(width=1, color="white")),
+                    text=[b["tech"][:15] for b in cat_items],
+                    textposition="top center",
+                    textfont=dict(size=8),
+                    name=cat,
+                    hovertemplate="<b>%{text}</b><br>Risk: %{y}<br>Days to EOL: %{x}<extra></extra>",
+                ))
+
+            bubble_fig.update_layout(
+                xaxis=dict(title="Days Until EOL", zeroline=True),
+                yaxis=dict(title="Risk Score", range=[0, 105]),
+                height=450,
+                margin=dict(l=10, r=10, t=30, b=40),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5),
+            )
+            # Add danger zone
+            bubble_fig.add_shape(type="rect", x0=-100, y0=60, x1=365, y1=105,
+                                fillcolor="rgba(220,38,38,0.08)", line=dict(width=0))
+            bubble_fig.add_annotation(x=180, y=100, text="DANGER ZONE", showarrow=False,
+                                     font=dict(color="rgba(220,38,38,0.4)", size=14, family="Arial Black"))
+
+            st.plotly_chart(bubble_fig, use_container_width=True)
+
+            # ── Wave cards ───────────────────────────────────────────────────
+            st.divider()
+            st.markdown("##### 📋 Wave Details")
             wave_colors = {1: ("#DC2626","#FEE2E2","🔴"), 2: ("#EA580C","#FFEDD5","🟠"),
                           3: ("#CA8A04","#FEF9C3","🟡"), 4: ("#16A34A","#DCFCE7","🟢")}
             for w in [1, 2, 3, 4]:
@@ -1458,6 +1585,7 @@ elif _cur_page in ("Disposition", "Wave Planning", "Business Case", "Workload Op
 
             # Full wave table
             st.divider()
+            st.markdown("##### 📊 Full Wave Data")
             wave_df = pd.DataFrame([{
                 "Wave": r.get("wave_name",""), "Technology": r.get("technology",""),
                 "Category": r.get("category",""), "Urgency": r.get("urgency",""),
