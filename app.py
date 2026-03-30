@@ -876,10 +876,10 @@ if _cur_page == "Discovery":
 
     def _fc_color(step_ord, active_states):
         if a5s in active_states:
-            return "#1D4ED8"  # active blue
+            return "#1D4ED8"
         elif _cur_ord > step_ord:
-            return "#065F46"  # done green
-        return "#334155"  # idle gray
+            return "#065F46"
+        return "#334155"
 
     def _fc_border(step_ord, active_states):
         if a5s in active_states:
@@ -888,85 +888,126 @@ if _cur_page == "Discovery":
             return "#10B981"
         return "#475569"
 
-    # Node definitions: (id, label, x, y, step_ord, active_states)
-    # Main row y=2, upper branch y=3.2, lower branch y=0.8
+    # Box dimensions
+    BW = 1.3   # half-width
+    BH = 0.6   # half-height
+    GAP = 3.5  # horizontal gap between nodes
+
+    # Node positions: (id, label, x, y, step_ord, active_states)
+    # Main row y=3, upper y=5.5, lower y=0.5
     _nodes = [
-        ("1a", "1a\nPreliminary\nGuiding Principles", 1, 2, 0, ["idle","survey"]),
-        ("2a", "2a\nCurrent Landscape\nDiscovery",     3, 2, 1, ["survey"]),
-        ("3a", "3a\nPreliminary\nDisposition",         5, 2, 3, ["principles_table"]),
-        ("4a", "4a\nPreliminary\nWave Planning",       6, 3.3, 4, ["principles_table"]),
-        ("5",  "5\nApp\nDiscussion",                   7, 2, 5, ["chatting"]),
-        ("1b", "1b\nDetailed\nGuiding Principles",     9, 2, 6, ["principles"]),
-        ("2b", "2b\nUtilization &\nCharacteristics",   4, 0.7, 2, ["survey"]),
-        ("6a", "6a\nPreliminary\nCost Analysis",       6, 0.7, 7, ["costing"]),
-        ("3b", "3b\nFinal\nDisposition",               11, 2, 8, ["ready","analysing"]),
-        ("4b", "4b\nFinal\nWave Planning",             13, 2, 9, ["done"]),
-        ("FC", "Final Costs &\nBusiness Case",         13, 3.3, 9, ["done"]),
-        ("AP", "Approvals",                            15, 2, 10, ["done"]),
+        ("1a", "1a · Preliminary\nGuiding Principles",   0*GAP, 3, 0, ["idle","survey"]),
+        ("2a", "2a · Current Landscape\nDiscovery",       1*GAP, 3, 1, ["survey"]),
+        ("3a", "3a · Preliminary\nDisposition",           2*GAP, 3, 3, ["principles_table"]),
+        ("5",  "5 · App\nDiscussion",                     3*GAP, 3, 5, ["chatting"]),
+        ("1b", "1b · Detailed\nGuiding Principles",       4*GAP, 3, 6, ["principles"]),
+        ("3b", "3b · Final\nDisposition",                 5*GAP, 3, 8, ["ready","analysing"]),
+        ("4b", "4b · Final\nWave Planning",               6*GAP, 3, 9, ["done"]),
+        ("AP", "Approvals",                               7*GAP, 3, 10, ["done"]),
+        # Upper branch
+        ("4a", "4a · Preliminary\nWave Planning",         2.5*GAP, 5.5, 4, ["principles_table"]),
+        ("FC", "Final Costs &\nBusiness Case",            6*GAP, 5.5, 9, ["done"]),
+        # Lower branch
+        ("2b", "2b · Utilization &\nCharacteristics",     1.5*GAP, 0.5, 2, ["survey"]),
+        ("6a", "6a · Preliminary\nCost Analysis",         2.5*GAP, 0.5, 7, ["costing"]),
     ]
 
-    # Edges: (from_x, from_y, to_x, to_y)
+    # Edges connect from box edge to box edge
     _edges = [
-        (1,2, 3,2), (3,2, 5,2), (5,2, 7,2), (7,2, 9,2),    # main flow 1a→2a→3a→5→1b
-        (9,2, 11,2), (11,2, 13,2), (13,2, 15,2),            # 1b→3b→4b→Approvals
-        (5,2, 6,3.3),                                         # 3a ↑ 4a (branch up)
-        (6,3.3, 7,2),                                         # 4a → 5
-        (3,2, 4,0.7),                                         # 2a ↓ 2b (branch down)
-        (4,0.7, 6,0.7),                                       # 2b → 6a
-        (6,0.7, 7,2),                                         # 6a → 5
-        (11,2, 13,3.3),                                        # 3b ↑ Final Costs
-        (13,3.3, 13,2),                                        # Final Costs → 4b
+        # Main horizontal flow
+        (0*GAP+BW, 3, 1*GAP-BW, 3),     # 1a → 2a
+        (1*GAP+BW, 3, 2*GAP-BW, 3),     # 2a → 3a
+        (2*GAP+BW, 3, 3*GAP-BW, 3),     # 3a → 5
+        (3*GAP+BW, 3, 4*GAP-BW, 3),     # 5 → 1b
+        (4*GAP+BW, 3, 5*GAP-BW, 3),     # 1b → 3b
+        (5*GAP+BW, 3, 6*GAP-BW, 3),     # 3b → 4b
+        (6*GAP+BW, 3, 7*GAP-BW, 3),     # 4b → Approvals
+        # 4a branch UP: 3a up to 4a, 4a across to 5
+        (2*GAP, 3+BH, 2.5*GAP, 5.5-BH),       # 3a ↑ 4a
+        (2.5*GAP, 5.5-BH, 3*GAP, 3+BH),       # 4a ↓ 5
+        # 2b/6a branch DOWN: 2a down to 2b, 2b across to 6a, 6a up to 5
+        (1*GAP, 3-BH, 1.5*GAP, 0.5+BH),       # 2a ↓ 2b
+        (1.5*GAP+BW, 0.5, 2.5*GAP-BW, 0.5),   # 2b → 6a
+        (2.5*GAP, 0.5+BH, 3*GAP, 3-BH),       # 6a ↑ 5
+        # Final Costs branch UP: 3b up to FC, FC down to 4b
+        (5*GAP, 3+BH, 6*GAP, 5.5-BH),         # 3b ↑ FC
+        (6*GAP, 5.5-BH, 6*GAP, 3+BH),         # FC ↓ 4b
     ]
 
     fig = go.Figure()
 
-    # Draw edges (arrows)
-    for x0, y0, x1, y1 in _edges:
-        fig.add_trace(go.Scatter(
-            x=[x0, x1], y=[y0, y1], mode="lines",
-            line=dict(color="#64748B", width=2),
-            hoverinfo="skip", showlegend=False
-        ))
-        # Arrowhead
+    # Separate straight (horizontal) and curved (branch) edges
+    _straight_edges = _edges[:7]   # main horizontal flow
+    _curved_edges = _edges[7:]     # branch connections
+
+    # Draw straight edges with arrowheads
+    for x0, y0, x1, y1 in _straight_edges:
         fig.add_annotation(
             x=x1, y=y1, ax=x0, ay=y0,
             xref="x", yref="y", axref="x", ayref="y",
-            showarrow=True, arrowhead=3, arrowsize=1.2,
-            arrowwidth=2, arrowcolor="#64748B",
-            opacity=0
+            showarrow=True, arrowhead=2, arrowsize=1.5,
+            arrowwidth=1.5, arrowcolor="#94A3B8",
+            standoff=0, startstandoff=0
+        )
+
+    # Draw curved edges using SVG paths for branches
+    import numpy as np
+    for x0, y0, x1, y1 in _curved_edges:
+        # Generate smooth Bezier curve points
+        t = np.linspace(0, 1, 30)
+        # Control points for a smooth S-curve
+        cx0 = x0 + (x1 - x0) * 0.1
+        cy0 = y0 + (y1 - y0) * 0.6
+        cx1 = x0 + (x1 - x0) * 0.9
+        cy1 = y0 + (y1 - y0) * 0.4
+        # Cubic Bezier
+        bx = (1-t)**3*x0 + 3*(1-t)**2*t*cx0 + 3*(1-t)*t**2*cx1 + t**3*x1
+        by = (1-t)**3*y0 + 3*(1-t)**2*t*cy0 + 3*(1-t)*t**2*cy1 + t**3*y1
+        fig.add_trace(go.Scatter(
+            x=bx.tolist(), y=by.tolist(), mode="lines",
+            line=dict(color="#94A3B8", width=1.5, dash="dot"),
+            hoverinfo="skip", showlegend=False
+        ))
+        # Arrowhead at end
+        fig.add_annotation(
+            x=x1, y=y1, ax=bx[-3], ay=by[-3],
+            xref="x", yref="y", axref="x", ayref="y",
+            showarrow=True, arrowhead=2, arrowsize=1.2,
+            arrowwidth=1.5, arrowcolor="#94A3B8",
+            standoff=0, startstandoff=0
         )
 
     # Draw nodes
+    _node_annotations = []
     for nid, label, x, y, step_ord, active_states in _nodes:
         bg = _fc_color(step_ord, active_states)
         border = _fc_border(step_ord, active_states)
-        text_color = "white" if bg != "#334155" else "#94A3B8"
         fig.add_shape(
             type="rect",
-            x0=x-0.8, y0=y-0.45, x1=x+0.8, y1=y+0.45,
+            x0=x-BW, y0=y-BH, x1=x+BW, y1=y+BH,
             fillcolor=bg, line=dict(color=border, width=2),
             layer="below"
         )
-        fig.add_annotation(
-            x=x, y=y, text=label.replace("\n", "<br>"),
-            showarrow=False,
-            font=dict(size=10, color=text_color, family="Arial"),
-            align="center"
+        _node_annotations.append(
+            dict(x=x, y=y, text=label.replace("\n", "<br>"),
+                 showarrow=False, font=dict(size=9, color="white", family="Arial"),
+                 align="center")
         )
 
     # Layout
     fig.update_layout(
         plot_bgcolor="#0F172A",
         paper_bgcolor="#0F172A",
-        xaxis=dict(visible=False, range=[-0.5, 16.5]),
-        yaxis=dict(visible=False, range=[-0.2, 4.2]),
-        margin=dict(l=10, r=10, t=30, b=10),
-        height=280,
-        annotations=[
-            dict(x=0, y=4.0, text="<i>Discovery</i>", showarrow=False,
-                 font=dict(size=12, color="#94A3B8", family="Arial"), xanchor="left"),
-            dict(x=0, y=-0.0, text="<i>Migrate →</i>", showarrow=False,
-                 font=dict(size=11, color="#94A3B8", family="Arial"), xanchor="left"),
+        xaxis=dict(visible=False, range=[-2, 7*GAP+2], fixedrange=True),
+        yaxis=dict(visible=False, range=[-1, 7], scaleanchor="x", fixedrange=True),
+        margin=dict(l=10, r=10, t=10, b=10),
+        height=350,
+        dragmode=False,
+        annotations=_node_annotations + [
+            dict(x=-1.5, y=6.5, text="<i>Discovery</i>", showarrow=False,
+                 font=dict(size=13, color="#94A3B8"), xanchor="left"),
+            dict(x=-1.5, y=-0.5, text="<i>Migrate →</i>", showarrow=False,
+                 font=dict(size=12, color="#94A3B8"), xanchor="left"),
         ]
     )
 
