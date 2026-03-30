@@ -389,15 +389,17 @@ def assign_migration_waves(table_data, os_df=None, db_df=None, ws_df=None, as_df
         best_risk = None
         for key, data in risk_lookup.items():
             if tech.lower() in key.lower() or key.lower() in tech.lower():
-                if best_risk is None or data["risk_score"] > best_risk["risk_score"]:
+                _d_score = data.get("risk_score") or 0
+                _b_score = best_risk.get("risk_score") or 0 if best_risk else 0
+                if best_risk is None or _d_score > _b_score:
                     best_risk = data
 
         if best_risk is None:
             best_risk = {"risk_score": 50, "risk_level": "MEDIUM", "days_eol": 999, "status": "Supported"}
 
         # Assign wave
-        score = best_risk["risk_score"]
-        days = best_risk["days_eol"] if best_risk["days_eol"] is not None else 999
+        score = best_risk.get("risk_score") or 50
+        days = best_risk.get("days_eol") if best_risk.get("days_eol") is not None else 999
         status = str(best_risk.get("status", "")).lower()
 
         if score >= 75 or days < 0 or status == "end of life":
