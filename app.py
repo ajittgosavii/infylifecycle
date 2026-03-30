@@ -143,6 +143,105 @@ table td, table th { word-wrap: break-word; overflow-wrap: break-word; }
     justify-content: center;
 }
 .b-error   { background:#FEE2E2; color:#991B1B; }
+
+/* ── Sidebar navigation ─────────────────────────────────────────── */
+.nav-section-header {
+    font-size: 0.7rem; font-weight: 700; color: #94A3B8;
+    letter-spacing: 1.5px; padding: 12px 12px 4px; margin-top: 6px;
+}
+.nav-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 14px; border-radius: 8px; cursor: pointer;
+    font-size: 0.85rem; color: #334155; transition: all 0.2s;
+    margin: 1px 4px; text-decoration: none;
+}
+.nav-item:hover { background: #EFF6FF; color: #1D4ED8; }
+.nav-item.active {
+    background: linear-gradient(135deg, #DBEAFE, #EFF6FF);
+    color: #1E40AF; font-weight: 600;
+    border-left: 3px solid #3B82F6;
+}
+.nav-item .nav-icon { font-size: 1rem; width: 22px; text-align: center; }
+.nav-item .nav-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #60A5FA; margin-left: auto; flex-shrink: 0;
+}
+
+/* ── Flowchart ───────────────────────────────────────────────────── */
+.flowchart-container {
+    display: flex; flex-wrap: wrap; align-items: center;
+    justify-content: center; gap: 8px; padding: 1.2rem;
+    background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%);
+    border-radius: 12px; margin-bottom: 1.5rem;
+}
+.fc-block {
+    padding: 10px 16px; border-radius: 8px; font-size: 0.78rem;
+    font-weight: 600; cursor: pointer; transition: all 0.3s;
+    text-align: center; min-width: 100px; position: relative;
+    border: 2px solid transparent;
+}
+.fc-block.fc-idle {
+    background: #334155; color: #94A3B8; border-color: #475569;
+}
+.fc-block.fc-active {
+    background: #1D4ED8; color: white; border-color: #60A5FA;
+    box-shadow: 0 0 12px rgba(59,130,246,0.5);
+    animation: fc-pulse 2s ease-in-out infinite;
+}
+.fc-block.fc-done {
+    background: #065F46; color: #6EE7B7; border-color: #10B981;
+}
+.fc-block:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+.fc-arrow {
+    color: #64748B; font-size: 1.2rem; font-weight: 700;
+}
+@keyframes fc-pulse {
+    0%, 100% { box-shadow: 0 0 12px rgba(59,130,246,0.5); }
+    50% { box-shadow: 0 0 24px rgba(59,130,246,0.8); }
+}
+
+/* ── Blinking AI Chat button ─────────────────────────────────────── */
+.ai-chat-btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 12px 24px; border-radius: 25px; font-size: 0.95rem;
+    font-weight: 700; cursor: pointer; border: none;
+    background: linear-gradient(135deg, #7C3AED, #9333EA);
+    color: white; transition: all 0.3s;
+    animation: chat-blink 1.5s ease-in-out infinite;
+}
+.ai-chat-btn:hover {
+    transform: scale(1.05);
+    box-shadow: 0 6px 20px rgba(124,58,237,0.5);
+}
+@keyframes chat-blink {
+    0%, 100% { box-shadow: 0 0 8px rgba(124,58,237,0.4); }
+    50% { box-shadow: 0 0 20px rgba(124,58,237,0.8), 0 0 40px rgba(124,58,237,0.3); }
+}
+.chat-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: #34D399; animation: dot-blink 1s infinite;
+}
+@keyframes dot-blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+}
+
+/* ── GP Category Cards ───────────────────────────────────────────── */
+.gp-card {
+    background: white; border-radius: 12px; padding: 1.2rem;
+    border: 1px solid #E2E8F0; transition: all 0.3s;
+    text-align: center; cursor: default;
+}
+.gp-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.1);
+}
+.gp-card .gp-icon { font-size: 2rem; margin-bottom: 8px; }
+.gp-card .gp-title { font-size: 0.95rem; font-weight: 700; color: #1E293B; }
+.gp-card .gp-desc { font-size: 0.78rem; color: #64748B; margin-top: 4px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -189,6 +288,7 @@ def _init():
         "a1_status": "idle", "a2_status": "idle",
         "changes_log": [], "old_os_df": None, "old_db_df": None,
         "a3_skip_until": None,
+        "current_page": "Discovery",
     }.items():
         if k not in st.session_state:
             st.session_state[k] = v
@@ -242,6 +342,40 @@ def badge(status: str) -> str:
 
 
 # ── Sidebar ────────────────────────────────────────────────────────────────────
+
+# Navigation page definitions
+_NAV_PAGES = {
+    "DAY 0 — ASSESS": [
+        ("Discovery",              "🔍", True),
+        ("Disposition",            "📋", True),
+        ("Future Blueprint",       "📐", True),
+        ("Workload Optimization",  "🔧", True),
+        ("Business Case",          "💼", True),
+        ("Server Affinity",        "🖧", True),
+        ("Code Analysis",          "💻", True),
+        ("Multi-Cloud Strategy",   "☁️", True),
+        ("Version Lifecycle",      "⏱️", True),
+        ("Wave Planning",          "🌊", True),
+        ("AI Copilot — Assess",    "🤖", True),
+    ],
+    "DAY 1 — MIGRATE": [
+        ("AI Migration Hub",       "🚀", True),
+    ],
+    "DAY 2 — OPERATE": [
+        ("Compliance",             "🛡️", True),
+        ("Governance",             "⚖️", True),
+        ("Operate & Monitor",      "📡", True),
+        ("FinOps",                 "💲", True),
+        ("License Optimization",   "📄", True),
+        ("PaaS / Serverless",      "🔗", True),
+        ("Dependency Discovery",   "🔎", True),
+        ("AI Copilot — Operate",   "🤖", True),
+    ],
+    "OPTIMIZE": [
+        ("Cloud Modernization",    "☁️", True),
+    ],
+}
+
 with st.sidebar:
     st.markdown("""
     <div style="background:linear-gradient(135deg,#001F5B 0%,#003087 50%,#0057C8 100%);
@@ -279,121 +413,76 @@ with st.sidebar:
       @keyframes logosweep{0%,100%{width:20%;margin-left:0}50%{width:80%;margin-left:10%}}
     </style>
     """, unsafe_allow_html=True)
+
+    # ── API Key (compact) ─────────────────────────────────────────────────────
+    with st.expander("🔑 API Key", expanded=False):
+        api_key = st.text_input("OpenAI API key", type="password", placeholder="sk-...",
+                                 help="Set OPENAI_API_KEY in Streamlit Cloud Secrets.")
+        if not api_key:
+            try: api_key = st.secrets["OPENAI_API_KEY"]
+            except Exception: pass
+        key_ok = bool(api_key and api_key.startswith("sk-"))
+        if api_key and not key_ok: st.error("Key must start with sk-")
+        elif key_ok: st.success("API key ready")
+
+    # ── Navigation ────────────────────────────────────────────────────────────
+    _cur_page = st.session_state.get("current_page", "Discovery")
+
+    for section, items in _NAV_PAGES.items():
+        st.markdown(f"<div class='nav-section-header'>{section}</div>", unsafe_allow_html=True)
+        for page_name, icon, has_dot in items:
+            is_active = (_cur_page == page_name)
+            if st.button(
+                f"{icon}  {page_name}",
+                key=f"nav_{page_name}",
+                use_container_width=True,
+                type="primary" if is_active else "secondary",
+            ):
+                st.session_state["current_page"] = page_name
+                st.rerun()
+
+    # ── Agent controls (compact, at bottom) ──────────────────────────────────
     st.divider()
+    with st.expander("🧰 Agents & Tools", expanded=False):
+        s1 = st.session_state.a1_status
+        s2 = st.session_state.a2_status
+        st.markdown(f"""<div class="agent-card a1">
+        <b>🔍 Sentinel</b> {badge(s1)}
+        <small style="display:block;color:#666">{len(OS_DATA)} OS + {len(DB_DATA)} DB</small>
+        </div>""", unsafe_allow_html=True)
+        run_a1 = st.button("▶ Run Sentinel", width="stretch", disabled=not key_ok, key="sb_run_a1")
 
-    st.subheader("🔑 OpenAI API Key")
-    api_key = st.text_input("Enter your API key", type="password", placeholder="sk-...",
-                             help="Set OPENAI_API_KEY in Streamlit Cloud Secrets.")
-    if not api_key:
-        try: api_key = st.secrets["OPENAI_API_KEY"]
-        except Exception: pass
+        st.markdown(f"""<div class="agent-card a2">
+        <b>🤖 Advisor</b> {badge(s2)}
+        </div>""", unsafe_allow_html=True)
+        run_a2 = st.button("▶ Run Advisor", width="stretch", disabled=not key_ok, key="sb_run_a2")
 
-    key_ok = bool(api_key and api_key.startswith("sk-"))
-    if api_key and not key_ok: st.error("⚠️ Key must start with sk-")
-    elif key_ok: st.success("✅ API key ready")
-    st.divider()
-
-    # Agent 1 — Sentinel
-    s1 = st.session_state.a1_status
-    st.markdown(f"""<div class="agent-card a1">
-    <b>🔍 Sentinel — Lifecycle Scanner</b><br>{badge(s1)}
-    <small style="display:block;margin-top:4px;color:#666">
-    Scans the web for lifecycle date changes.<br>
-    Pre-loaded: {len(OS_DATA)} OS + {len(DB_DATA)} DB = {len(OS_DATA)+len(DB_DATA)} entries</small>
-    </div>""", unsafe_allow_html=True)
-    run_a1 = st.button("▶ Run Sentinel — Scan for Updates", width="stretch", disabled=not key_ok)
-    st.caption("⏱ ~2–3 min (16 targeted web checks)")
-    st.divider()
-
-    # Agent 2 — Advisor
-    s2 = st.session_state.a2_status
-    st.markdown(f"""<div class="agent-card a2">
-    <b>🤖 Advisor — AI Recommendation Engine</b><br>{badge(s2)}
-    <small style="display:block;margin-top:4px;color:#666">
-    Generates expert migration recommendations for all rows</small>
-    </div>""", unsafe_allow_html=True)
-    run_a2 = st.button("▶ Run Advisor — Generate Recommendations", width="stretch", disabled=not key_ok)
-    st.divider()
-
-    # Agent 3 — Watchdog
-    st.markdown("""<div class="agent-card a3">
-    <b>🔄 Watchdog — Refresh Monitor</b>
-    <small style="display:block;margin-top:4px;color:#666">
-    14-day schedule · seeks permission before re-running</small>
-    </div>""", unsafe_allow_html=True)
-    refresh_agent.render_status_card(
-        st.session_state.last_refresh,
-        os_count=len(st.session_state.os_df),
-        db_count=len(st.session_state.db_df),
-        ws_count=len(st.session_state.ws_df),
-        as_count=len(st.session_state.as_df),
-        fw_count=len(st.session_state.fw_df)
-    )
-    st.divider()
-
-    st.divider()
-
-    # Agent 4 / 5
-    history = VersionGuardianAgent.get_history()
-    a5s = st.session_state.get("a5_status", "idle")
-    st.markdown(f"""<div class="agent-card a4">
-    <b>🛡️ Guardian — Version Snapshot Manager</b>
-    <small style="display:block;margin-top:4px;color:#666">{len(history)} snapshot(s)</small></div>""", unsafe_allow_html=True)
-    st.markdown(f"""<div class="agent-card a5">
-    <b>🧠 Strategist — Policy Analysis Engine</b><br>{badge(a5s)}
-    <small style="display:block;margin-top:4px;color:#666">Apr 2026 → Jun 2028</small>
-    </div>""", unsafe_allow_html=True)
-    _a5_open = st.session_state.get("show_strategist", False)
-    _a5_label = "✕ Close Strategist" if _a5_open else "▶ Open Strategist"
-    if st.button(_a5_label, width="stretch", key="open_a5"):
-        st.session_state["show_strategist"] = not _a5_open
-        st.rerun()
-    st.divider()
-
-    os_recs = (st.session_state.os_df["Recommendation"] != "").sum()
-    db_recs = (st.session_state.db_df["Recommendation"] != "").sum()
-    st.caption(f"📊 OS: **{len(st.session_state.os_df)}** · DB: **{len(st.session_state.db_df)}** · WS: **{len(st.session_state.ws_df)}** · AS: **{len(st.session_state.as_df)}** · FW: **{len(st.session_state.fw_df)}** rows")
-    st.caption(f"💡 Recommendations: OS {os_recs} · DB {db_recs}")
-
-    # ── Persistence status ────────────────────────────────────────────────────
-    st.divider()
-    stats = get_rec_stats()
-    last_saved = stats.get("last_saved", "Never")
-    if last_saved and last_saved != "Never":
-        try:
-            last_saved = datetime.fromisoformat(last_saved).strftime("%d %b %Y %H:%M")
-        except Exception:
-            pass
-    if stats["os_with_recs"] > 0 or stats["db_with_recs"] > 0:
-        st.markdown(
-            f"<div style='background:#F0FDF4;border:1px solid #BBF7D0;border-radius:8px;"
-            f"padding:0.5rem 0.75rem;font-size:0.78rem;color:#166534;'>"
-            f"💾 <strong>Database</strong><br>"
-            f"OS: {stats['os_with_recs']}/{stats['os_total']} recs stored<br>"
-            f"DB: {stats['db_with_recs']}/{stats['db_total']} recs stored<br>"
-            f"Last saved: {last_saved}"
-            f"</div>", unsafe_allow_html=True
-        )
-    else:
-        st.markdown(
-            f"<div style='background:#FFF7ED;border:1px solid #FED7AA;border-radius:8px;"
-            f"padding:0.5rem 0.75rem;font-size:0.78rem;color:#92400E;'>"
-            f"💾 <strong>Database</strong><br>"
-            f"No recommendations stored yet.<br>"
-            f"Run Agent 2 to generate &amp; persist."
-            f"</div>", unsafe_allow_html=True
+        st.markdown("""<div class="agent-card a3">
+        <b>🔄 Watchdog</b>
+        <small style="display:block;color:#666">14-day refresh</small>
+        </div>""", unsafe_allow_html=True)
+        refresh_agent.render_status_card(
+            st.session_state.last_refresh,
+            os_count=len(st.session_state.os_df),
+            db_count=len(st.session_state.db_df),
+            ws_count=len(st.session_state.ws_df),
+            as_count=len(st.session_state.as_df),
+            fw_count=len(st.session_state.fw_df)
         )
 
-    # ══════════════════════════════════════════════════════════════════════════
-    # TOOLS SECTION — Inventory Upload, What-If Planner, Agent Status, History
-    # ══════════════════════════════════════════════════════════════════════════
-    st.divider()
-    st.markdown("""<div style='background:linear-gradient(135deg,#0F172A,#1E293B);
-        padding:0.6rem 0.8rem;border-radius:8px;margin-bottom:0.6rem;'>
-        <span style='color:#F59E0B;font-weight:700;font-size:0.85rem;'>🧰 TOOLS & UTILITIES</span>
-    </div>""", unsafe_allow_html=True)
+        history = VersionGuardianAgent.get_history()
+        a5s = st.session_state.get("a5_status", "idle")
+        st.markdown(f"""<div class="agent-card a4">
+        <b>🛡️ Guardian</b> <small>{len(history)} snapshots</small>
+        </div>""", unsafe_allow_html=True)
+        st.markdown(f"""<div class="agent-card a5">
+        <b>🧠 Strategist</b> {badge(a5s)}
+        </div>""", unsafe_allow_html=True)
 
-    # ── Inventory Upload (sidebar) ───────────────────────────────────────────
+        os_recs = (st.session_state.os_df["Recommendation"] != "").sum()
+        db_recs = (st.session_state.db_df["Recommendation"] != "").sum()
+        st.caption(f"OS: {len(st.session_state.os_df)} · DB: {len(st.session_state.db_df)} · Recs: {os_recs+db_recs}")
+
     with st.expander("📤 Inventory Upload", expanded=False):
         matched_os_inv, matched_db_inv = render_upload_section()
         if matched_os_inv is not None:
@@ -409,50 +498,23 @@ with st.sidebar:
         if stored_os_inv is not None or stored_db_inv is not None:
             render_inventory_results(stored_os_inv, stored_db_inv)
 
-    # ── What-If Planner (sidebar) ────────────────────────────────────────────
     with st.expander("🔮 What-If Planner", expanded=False):
         render_scenario_planner(st.session_state.os_df, st.session_state.db_df)
 
-    # ── Agent Status & Log (sidebar) ─────────────────────────────────────────
-    with st.expander("📋 Agent Status & Log", expanded=False):
-        s1 = st.session_state.a1_status
-        s2 = st.session_state.a2_status
-        icon1 = {"idle":"⚪","running":"🔵","done":"✅","error":"❌"}.get(s1,"⚪")
-        icon2 = {"idle":"⚪","running":"🔵","done":"✅","error":"❌"}.get(s2,"⚪")
-        st.markdown(f"{icon1} **Sentinel**: `{s1.upper()}`")
-        st.markdown(f"{icon2} **Advisor**: `{s2.upper()}`")
-        last_r = st.session_state.last_refresh
-        days_left = refresh_agent.days_until_refresh(last_r)
-        due = refresh_agent.is_refresh_due(last_r)
-        icon3 = "🟡" if due else ("✅" if last_r else "⚪")
-        last_str = last_r.strftime("%d %b %H:%M") if last_r else "Never"
-        st.markdown(f"{icon3} **Watchdog**: `{'DUE' if due else ('OK' if last_r else 'WAIT')}`  \nLast: {last_str}")
-        h = VersionGuardianAgent.get_history()
-        st.markdown(f"🛡️ **Guardian**: {len(h)} snapshot(s)")
-        a5s_sb = st.session_state.get("a5_status","idle")
-        gps_sb = st.session_state.get("a5_principles",[])
-        st.markdown(f"🧠 **Strategist**: `{a5s_sb.upper()}` · {len(gps_sb)} principles")
-        if st.session_state.changes_log:
-            st.caption(f"📋 {len(st.session_state.changes_log)} changes from last Agent 1 run")
-            for c in st.session_state.changes_log[:5]:
-                st.markdown(f"<small>- {c}</small>", unsafe_allow_html=True)
-            if len(st.session_state.changes_log) > 5:
-                st.caption(f"... and {len(st.session_state.changes_log)-5} more")
-
-    # ── Version History (sidebar) ────────────────────────────────────────────
     with st.expander("🛡️ Version History", expanded=False):
         VersionGuardianAgent.render_history_tab()
 
 
 # ── Header ────────────────────────────────────────────────────────────────────
+_cur_page = st.session_state.get("current_page", "Discovery")
 st.markdown(f"""
 <div class="infy-header">
   <h1>🖥️ INFY Migration Version Lifecycle Tracker</h1>
   <p>Infosys Enterprise Architecture &nbsp;·&nbsp;
      Powered by OpenAI GPT &nbsp;·&nbsp;
      {len(OS_DATA)} OS + {len(DB_DATA)} DB + {len(WS_DATA)} Web Servers + {len(AS_DATA)} App Servers + {len(FW_DATA)} Frameworks &nbsp;·&nbsp;
-     Risk Dashboard · Scenario Planner · Inventory Upload · PDF Reports &nbsp;·&nbsp;
-     5 AI Agents: Sentinel · Advisor · Watchdog · Guardian · Strategist</p>
+     5 AI Agents: Sentinel · Advisor · Watchdog · Guardian · Strategist &nbsp;·&nbsp;
+     <strong>{_cur_page}</strong></p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -792,24 +854,190 @@ if run_a2:
     st.rerun()
 
 
-# ── Main content: Tabs OR Strategist ──────────────────────────────────────────
-_show_strategist = st.session_state.get("show_strategist", False)
+# ── Main content: Page-based routing ──────────────────────────────────────────
+_show_strategist = (_cur_page == "Discovery")
 
-# ── Tabs ──────────────────────────────────────────────────────────────────────
-tab_dash, tab_os, tab_db, tab_wsas, tab_fw = st.tabs([
-    "📊 Dashboard", "🖥️ OS Versions", "🗄️ DB Versions",
-    "🌐 Web & App Servers", "📦 Frameworks",
-])
+# ════════════════════════════════════════════════════════════════════════════════
+# DISCOVERY PAGE — Flowchart + Guiding Principles + AI Chat
+# ════════════════════════════════════════════════════════════════════════════════
+if _cur_page == "Discovery":
+    # ── Flowchart at top — highlights current Agent 5 step ────────────────────
+    a5s = st.session_state.get("a5_status", "idle")
+    _fc_steps = [
+        ("1a", "Preliminary\nGuiding Principles", ["idle", "landscape", "landscape_other"]),
+        ("2a", "Current Landscape\nDiscovery", ["db_landscape", "db_landscape_other"]),
+        ("3a", "Preliminary\nDisposition", ["cloud_profile", "cloud_other"]),
+        ("4a", "Preliminary\nWave Planning", ["principles_table"]),
+        ("5",  "App\nDiscussion", ["chatting"]),
+        ("1b", "Detailed\nGuiding Principles", ["principles"]),
+        ("6a", "Preliminary\nCost Analysis", ["costing"]),
+        ("3b", "Final\nDisposition", ["ready", "analysing"]),
+        ("4b", "Final\nWave Planning", ["done"]),
+    ]
 
-if _show_strategist:
-    # Hide tabs entirely with CSS — Strategist renders below
-    st.markdown("""<style>
-    .stTabs { display: none !important; }
-    </style>""", unsafe_allow_html=True)
-    # Also hide download section when Strategist is open
-    st.markdown("""<style>
-    [data-testid="stDownloadButton"] { display: none !important; }
-    </style>""", unsafe_allow_html=True)
+    # Build flowchart HTML
+    _step_map_order = {
+        "idle": 0, "landscape": 0, "landscape_other": 0,
+        "db_landscape": 1, "db_landscape_other": 1,
+        "cloud_profile": 2, "cloud_other": 2,
+        "principles_table": 3,
+        "chatting": 4,
+        "principles": 5,
+        "costing": 6,
+        "ready": 7, "analysing": 7,
+        "done": 8,
+    }
+    _fc_html = "<div class='flowchart-container'>"
+    for i, (step_id, label, statuses) in enumerate(_fc_steps):
+        cur_order = _step_map_order.get(a5s, 0)
+        step_order = i
+
+        if a5s in statuses:
+            css_class = "fc-active"
+        elif cur_order > step_order:
+            css_class = "fc-done"
+        else:
+            css_class = "fc-idle"
+
+        label_html = label.replace("\n", "<br>")
+        _fc_html += f"<div class='fc-block {css_class}' title='Step {step_id}'>"
+        _fc_html += f"<div style='font-size:0.65rem;opacity:0.7;margin-bottom:2px;'>{step_id}</div>"
+        _fc_html += f"{label_html}</div>"
+        if i < len(_fc_steps) - 1:
+            _fc_html += "<span class='fc-arrow'>→</span>"
+    _fc_html += "</div>"
+
+    # Side branch: 2b → 6a
+    _fc_html += """
+    <div style='text-align:center;margin:-10px 0 10px;'>
+        <span style='color:#64748B;font-size:0.72rem;'>
+            2b: Utilization &amp; Characteristics &nbsp;→&nbsp; 6a: Cost Analysis (shown above)
+        </span>
+    </div>
+    """
+    st.markdown(_fc_html, unsafe_allow_html=True)
+
+    # ── Clickable flowchart navigation buttons ────────────────────────────────
+    _fc_nav_cols = st.columns(len(_fc_steps))
+    _fc_target_status = [
+        "idle", "db_landscape", "cloud_profile", "principles_table",
+        "chatting", "principles", "costing", "ready", "done"
+    ]
+    for i, (col, (step_id, label, statuses)) in enumerate(zip(_fc_nav_cols, _fc_steps)):
+        with col:
+            clean_label = label.replace("\n", " ")
+            cur_order = _step_map_order.get(a5s, 0)
+            # Only allow jumping to completed steps or current step
+            can_jump = (i <= cur_order)
+            if can_jump and st.button(f"{step_id}", key=f"fc_jump_{step_id}",
+                                       help=f"Go to: {clean_label}", use_container_width=True):
+                st.session_state.a5_status = _fc_target_status[i]
+                st.rerun()
+
+    # ── Progress stepper bar (OS → DB → Cloud → ... → Done) ──────────────────
+    steps    = ["🗺️ OS", "🗄️ DB", "☁️ Cloud", "📋 Principles & Costs", "💬 Policy Chat", "⚖️ GP Generate", "💰 Cost Intel", "🧠 Analysis", "✅ Done"]
+    step_map = {"idle":0,"landscape":0,"landscape_other":0,
+                "db_landscape":1,"db_landscape_other":1,
+                "cloud_profile":2,"cloud_other":2,
+                "principles_table":3,
+                "chatting":4,"principles":5,"costing":6,
+                "ready":6,"analysing":7,"done":8}
+    cur_step = step_map.get(a5s, 0)
+    s_cols   = st.columns(len(steps))
+    for i, (col, lbl) in enumerate(zip(s_cols, steps)):
+        with col:
+            if i < cur_step:
+                st.markdown(f"<div style='text-align:center;color:#10B981;font-size:0.8rem;'>✅ {lbl}</div>", unsafe_allow_html=True)
+            elif i == cur_step:
+                st.markdown(f"<div style='text-align:center;color:#F59E0B;font-weight:700;font-size:0.8rem;'>● {lbl}</div>", unsafe_allow_html=True)
+            else:
+                st.markdown(f"<div style='text-align:center;color:#94A3B8;font-size:0.8rem;'>○ {lbl}</div>", unsafe_allow_html=True)
+    st.divider()
+
+    # ── Guiding Principles — 5 Category Cards (center) ────────────────────────
+    st.markdown("""
+    <div style="text-align:center;margin-bottom:1rem;">
+        <h2 style="color:#1E293B;margin:0;">Guiding Principles</h2>
+        <p style="color:#64748B;font-size:0.9rem;margin:4px 0 0;">
+            Define your migration strategy across 5 technology categories
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    gp_cols = st.columns(5)
+    _gp_categories = [
+        ("🖥️", "Operating\nSystem", "OS migration paths,\nupgrade policies", "#3B82F6"),
+        ("☁️", "Cloud\nSelection", "Target cloud provider\n& deployment model", "#10B981"),
+        ("🗄️", "Database\nTypes", "DB modernization\n& EOL handling", "#8B5CF6"),
+        ("🌐", "Web/App\nServers", "Web & app server\nlifecycle strategy", "#F59E0B"),
+        ("📦", "Framework\nTypes", "Runtime & framework\nversion management", "#EF4444"),
+    ]
+
+    for col, (icon, title, desc, color) in zip(gp_cols, _gp_categories):
+        with col:
+            title_html = title.replace("\n", "<br>")
+            desc_html = desc.replace("\n", "<br>")
+            st.markdown(f"""
+            <div class="gp-card" style="border-top:4px solid {color};">
+                <div class="gp-icon">{icon}</div>
+                <div class="gp-title">{title_html}</div>
+                <div class="gp-desc">{desc_html}</div>
+            </div>
+            """, unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ── Blinking AI Chat Button ──────────────────────────────────────────────
+    _chat_col1, _chat_col2, _chat_col3 = st.columns([2, 3, 2])
+    with _chat_col2:
+        st.markdown("""
+        <div style="text-align:center;margin:1rem 0;">
+            <div class="ai-chat-btn" style="display:inline-flex;">
+                <div class="chat-dot"></div>
+                <span>🧠 AI Policy Advisor — Chat with Agent 5</span>
+            </div>
+            <p style="color:#64748B;font-size:0.78rem;margin-top:8px;">
+                Agent 5 will guide you through the migration policy definition
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.divider()
+
+    # ── Now render the Agent 5 Strategist flow inline ────────────────────────
+    # (The full Strategist panel code below handles all phases)
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+# VERSION LIFECYCLE PAGE — Original tabs
+# ════════════════════════════════════════════════════════════════════════════════
+if _cur_page == "Version Lifecycle":
+    tab_dash, tab_os, tab_db, tab_wsas, tab_fw = st.tabs([
+        "📊 Dashboard", "🖥️ OS Versions", "🗄️ DB Versions",
+        "🌐 Web & App Servers", "📦 Frameworks",
+    ])
+elif _cur_page != "Discovery":
+    # Placeholder pages for other navigation items
+    st.markdown(f"""
+    <div style="text-align:center;padding:4rem 2rem;">
+        <div style="font-size:3rem;margin-bottom:1rem;">🚧</div>
+        <h2 style="color:#1E293B;">{_cur_page}</h2>
+        <p style="color:#64748B;font-size:1rem;">
+            This module is coming soon. Currently, <strong>Discovery</strong> and
+            <strong>Version Lifecycle</strong> are fully operational.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+# When NOT on Version Lifecycle, we still need tab variables for the existing code.
+# Create hidden tabs so the `with tab_dash:` blocks don't error.
+if _cur_page != "Version Lifecycle":
+    tab_dash, tab_os, tab_db, tab_wsas, tab_fw = st.tabs([
+        "📊 Dashboard", "🖥️ OS Versions", "🗄️ DB Versions",
+        "🌐 Web & App Servers", "📦 Frameworks",
+    ])
+    # Hide these tabs with CSS — they exist only to avoid NameError
+    st.markdown("<style>.stTabs{display:none!important;}</style>", unsafe_allow_html=True)
 
 
 # ────────────────── Tab 0: Executive Dashboard ────────────────────────────────
@@ -1268,11 +1496,8 @@ with tab_fw:
     )
 
 
-# ────────────────── Strategist Panel (shown when toggled from sidebar) ─────────
+# ────────────────── Strategist Panel (shown on Discovery page) ─────────────────
 if _show_strategist:
-    if st.button("✕ Close Strategist — Back to Tabs", use_container_width=True):
-        st.session_state["show_strategist"] = False
-        st.rerun()
     st.markdown("""
     <div style="background:linear-gradient(135deg,#1a1a2e,#16213e,#0f3460);
                 padding:1.2rem 1.8rem;border-radius:12px;color:white;margin-bottom:1.5rem;">
@@ -1286,29 +1511,9 @@ if _show_strategist:
     </div>""", unsafe_allow_html=True)
 
     if not key_ok:
-        st.warning("⚠️ Enter your OpenAI API key in the sidebar to use Agent 5.")
+        st.warning("⚠️ Enter your OpenAI API key in the sidebar (🔑 API Key) to use Agent 5.")
     else:
         a5s = st.session_state.get("a5_status", "idle")
-
-        # ── Progress stepper ──────────────────────────────────────────────────
-        steps    = ["🗺️ OS", "🗄️ DB", "☁️ Cloud", "📋 Principles & Costs", "💬 Policy Chat", "⚖️ GP Generate", "💰 Cost Intel", "🧠 Analysis", "✅ Done"]
-        step_map = {"idle":0,"landscape":0,"landscape_other":0,
-                    "db_landscape":1,"db_landscape_other":1,
-                    "cloud_profile":2,"cloud_other":2,
-                    "principles_table":3,
-                    "chatting":4,"principles":5,"costing":6,
-                    "ready":6,"analysing":7,"done":8}
-        cur_step = step_map.get(a5s, 0)
-        s_cols   = st.columns(len(steps))
-        for i, (col, lbl) in enumerate(zip(s_cols, steps)):
-            with col:
-                if i < cur_step:
-                    st.markdown(f"<div style='text-align:center;color:#10B981;font-size:0.8rem;'>✅ {lbl}</div>", unsafe_allow_html=True)
-                elif i == cur_step:
-                    st.markdown(f"<div style='text-align:center;color:#F59E0B;font-weight:700;font-size:0.8rem;'>● {lbl}</div>", unsafe_allow_html=True)
-                else:
-                    st.markdown(f"<div style='text-align:center;color:#94A3B8;font-size:0.8rem;'>○ {lbl}</div>", unsafe_allow_html=True)
-        st.divider()
 
         # ── PHASE 0: LANDSCAPE SURVEY ────────────────────────────────────────
         if a5s in ("idle", "landscape"):

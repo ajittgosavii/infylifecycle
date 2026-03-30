@@ -18,17 +18,38 @@ def _conn():
         sec_end       TEXT DEFAULT '',
         main_end      TEXT DEFAULT '',
         ext_end       TEXT DEFAULT '',
+        min_cpu       TEXT DEFAULT '',
+        min_ram       TEXT DEFAULT '',
         notes         TEXT DEFAULT '',
         recommendation TEXT DEFAULT '',
         upgrade       TEXT DEFAULT 'N',
         replace_flag  TEXT DEFAULT 'N',
         primary_alt   TEXT DEFAULT '',
         secondary_alt TEXT DEFAULT '',
+        risk_score    REAL DEFAULT NULL,
+        risk_level    TEXT DEFAULT '',
+        days_until_eol INTEGER DEFAULT NULL,
+        policy_rec    TEXT DEFAULT '',
+        verdict       TEXT DEFAULT '',
         final_rec     TEXT DEFAULT '',
         final_verdict TEXT DEFAULT '',
         analysis_src  TEXT DEFAULT '',
         updated_at    TEXT DEFAULT ''
     )""")
+    # ── Auto-migrate: add columns that may be missing in older DBs ────────
+    for col, ctype, cdef in [
+        ("min_cpu",       "TEXT",    "''"),
+        ("min_ram",       "TEXT",    "''"),
+        ("risk_score",    "REAL",    "NULL"),
+        ("risk_level",    "TEXT",    "''"),
+        ("days_until_eol","INTEGER", "NULL"),
+        ("policy_rec",    "TEXT",    "''"),
+        ("verdict",       "TEXT",    "''"),
+    ]:
+        try:
+            c.execute(f"ALTER TABLE os_versions ADD COLUMN {col} {ctype} DEFAULT {cdef}")
+        except sqlite3.OperationalError:
+            pass  # column already exists
     c.execute("""CREATE TABLE IF NOT EXISTS db_versions (
         db_key        TEXT PRIMARY KEY,
         db_name       TEXT DEFAULT '',
@@ -37,17 +58,38 @@ def _conn():
         main_end      TEXT DEFAULT '',
         ext_end       TEXT DEFAULT '',
         status        TEXT DEFAULT '',
+        min_cpu       TEXT DEFAULT '',
+        min_ram       TEXT DEFAULT '',
         notes         TEXT DEFAULT '',
         recommendation TEXT DEFAULT '',
         upgrade       TEXT DEFAULT 'N',
         replace_flag  TEXT DEFAULT 'N',
         primary_alt   TEXT DEFAULT '',
         secondary_alt TEXT DEFAULT '',
+        risk_score    REAL DEFAULT NULL,
+        risk_level    TEXT DEFAULT '',
+        days_until_eol INTEGER DEFAULT NULL,
+        policy_rec    TEXT DEFAULT '',
+        verdict       TEXT DEFAULT '',
         final_rec     TEXT DEFAULT '',
         final_verdict TEXT DEFAULT '',
         analysis_src  TEXT DEFAULT '',
         updated_at    TEXT DEFAULT ''
     )""")
+    # ── Auto-migrate: add columns that may be missing in older DBs ────────
+    for col, ctype, cdef in [
+        ("min_cpu",       "TEXT",    "''"),
+        ("min_ram",       "TEXT",    "''"),
+        ("risk_score",    "REAL",    "NULL"),
+        ("risk_level",    "TEXT",    "''"),
+        ("days_until_eol","INTEGER", "NULL"),
+        ("policy_rec",    "TEXT",    "''"),
+        ("verdict",       "TEXT",    "''"),
+    ]:
+        try:
+            c.execute(f"ALTER TABLE db_versions ADD COLUMN {col} {ctype} DEFAULT {cdef}")
+        except sqlite3.OperationalError:
+            pass  # column already exists
     c.execute("""CREATE TABLE IF NOT EXISTS app_state (
         key TEXT PRIMARY KEY, value TEXT DEFAULT '', updated TEXT DEFAULT ''
     )""")
@@ -67,20 +109,34 @@ def save_os_df(df: pd.DataFrame):
                         (key,)).fetchone()
         rec = str(r.get("Recommendation","")).strip()       or (ex[0] if ex else "")
         fin = str(r.get("Final Recommendation","")).strip() or (ex[1] if ex else "")
-        # 15 columns → 15 placeholders → 15 values
+        # Parse numeric fields safely
+        risk_score = r.get("Risk Score")
+        risk_score = float(risk_score) if pd.notna(risk_score) and str(risk_score).strip() != '' else None
+        days_eol   = r.get("Days Until EOL")
+        days_eol   = int(days_eol) if pd.notna(days_eol) and str(days_eol).strip() != '' else None
+        # 22 columns → 22 placeholders → 22 values
         c.execute("""
             INSERT INTO os_versions
-              (os_version,avail_date,sec_end,main_end,ext_end,notes,
+              (os_version,avail_date,sec_end,main_end,ext_end,
+               min_cpu,min_ram,notes,
                recommendation,upgrade,replace_flag,primary_alt,secondary_alt,
+               risk_score,risk_level,days_until_eol,policy_rec,verdict,
                final_rec,final_verdict,analysis_src,updated_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(os_version) DO UPDATE SET
               avail_date=excluded.avail_date, sec_end=excluded.sec_end,
               main_end=excluded.main_end, ext_end=excluded.ext_end,
+              min_cpu=CASE WHEN excluded.min_cpu!='' THEN excluded.min_cpu ELSE min_cpu END,
+              min_ram=CASE WHEN excluded.min_ram!='' THEN excluded.min_ram ELSE min_ram END,
               notes=excluded.notes,
               recommendation=CASE WHEN excluded.recommendation!='' THEN excluded.recommendation ELSE recommendation END,
               upgrade=excluded.upgrade, replace_flag=excluded.replace_flag,
               primary_alt=excluded.primary_alt, secondary_alt=excluded.secondary_alt,
+              risk_score=COALESCE(excluded.risk_score, risk_score),
+              risk_level=CASE WHEN excluded.risk_level!='' THEN excluded.risk_level ELSE risk_level END,
+              days_until_eol=COALESCE(excluded.days_until_eol, days_until_eol),
+              policy_rec=CASE WHEN excluded.policy_rec!='' THEN excluded.policy_rec ELSE policy_rec END,
+              verdict=CASE WHEN excluded.verdict!='' THEN excluded.verdict ELSE verdict END,
               final_rec=CASE WHEN excluded.final_rec!='' THEN excluded.final_rec ELSE final_rec END,
               final_verdict=excluded.final_verdict, analysis_src=excluded.analysis_src,
               updated_at=excluded.updated_at
@@ -89,12 +145,19 @@ def save_os_df(df: pd.DataFrame):
               str(r.get("Security/Standard Support End","")),
               str(r.get("Mainstream/Full Support End","")),
               str(r.get("Extended/LTSC Support End","")),
+              str(r.get("Min CPU","")),
+              str(r.get("Min RAM","")),
               str(r.get("Notes","")),
               rec,
               str(r.get("Upgrade","N")),
               str(r.get("Replace","N")),
               str(r.get("Primary Alternative","")),
               str(r.get("Secondary Alternative","")),
+              risk_score,
+              str(r.get("Risk Level","")),
+              days_eol,
+              str(r.get("Policy Recommendation","")),
+              str(r.get("Verdict","")),
               fin,
               str(r.get("Final Verdict","")),
               str(r.get("Analysis Source","")),
@@ -105,8 +168,10 @@ def save_os_df(df: pd.DataFrame):
 def load_os_df() -> pd.DataFrame:
     try:
         c = _conn()
-        rows = c.execute("""SELECT os_version,avail_date,sec_end,main_end,ext_end,notes,
+        rows = c.execute("""SELECT os_version,avail_date,sec_end,main_end,ext_end,
+               min_cpu,min_ram,notes,
                recommendation,upgrade,replace_flag,primary_alt,secondary_alt,
+               risk_score,risk_level,days_until_eol,policy_rec,verdict,
                final_rec,final_verdict,analysis_src FROM os_versions ORDER BY os_version
         """).fetchall()
         c.close()
@@ -114,8 +179,10 @@ def load_os_df() -> pd.DataFrame:
             return pd.DataFrame()
         return pd.DataFrame(rows, columns=[
             "OS Version","Availability Date","Security/Standard Support End",
-            "Mainstream/Full Support End","Extended/LTSC Support End","Notes",
+            "Mainstream/Full Support End","Extended/LTSC Support End",
+            "Min CPU","Min RAM","Notes",
             "Recommendation","Upgrade","Replace","Primary Alternative","Secondary Alternative",
+            "Risk Score","Risk Level","Days Until EOL","Policy Recommendation","Verdict",
             "Final Recommendation","Final Verdict","Analysis Source"])
     except Exception:
         return pd.DataFrame()
@@ -135,19 +202,34 @@ def save_db_df(df: pd.DataFrame):
                         (key,)).fetchone()
         rec = str(r.get("Recommendation","")).strip()       or (ex[0] if ex else "")
         fin = str(r.get("Final Recommendation","")).strip() or (ex[1] if ex else "")
-        # 17 columns → 17 placeholders → 17 values
+        # Parse numeric fields safely
+        risk_score = r.get("Risk Score")
+        risk_score = float(risk_score) if pd.notna(risk_score) and str(risk_score).strip() != '' else None
+        days_eol   = r.get("Days Until EOL")
+        days_eol   = int(days_eol) if pd.notna(days_eol) and str(days_eol).strip() != '' else None
+        # 24 columns → 24 placeholders → 24 values
         c.execute("""
             INSERT INTO db_versions
-              (db_key,db_name,version,db_type,main_end,ext_end,status,notes,
+              (db_key,db_name,version,db_type,main_end,ext_end,status,
+               min_cpu,min_ram,notes,
                recommendation,upgrade,replace_flag,primary_alt,secondary_alt,
+               risk_score,risk_level,days_until_eol,policy_rec,verdict,
                final_rec,final_verdict,analysis_src,updated_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT(db_key) DO UPDATE SET
               db_type=excluded.db_type, main_end=excluded.main_end,
-              ext_end=excluded.ext_end, status=excluded.status, notes=excluded.notes,
+              ext_end=excluded.ext_end, status=excluded.status,
+              min_cpu=CASE WHEN excluded.min_cpu!='' THEN excluded.min_cpu ELSE min_cpu END,
+              min_ram=CASE WHEN excluded.min_ram!='' THEN excluded.min_ram ELSE min_ram END,
+              notes=excluded.notes,
               recommendation=CASE WHEN excluded.recommendation!='' THEN excluded.recommendation ELSE recommendation END,
               upgrade=excluded.upgrade, replace_flag=excluded.replace_flag,
               primary_alt=excluded.primary_alt, secondary_alt=excluded.secondary_alt,
+              risk_score=COALESCE(excluded.risk_score, risk_score),
+              risk_level=CASE WHEN excluded.risk_level!='' THEN excluded.risk_level ELSE risk_level END,
+              days_until_eol=COALESCE(excluded.days_until_eol, days_until_eol),
+              policy_rec=CASE WHEN excluded.policy_rec!='' THEN excluded.policy_rec ELSE policy_rec END,
+              verdict=CASE WHEN excluded.verdict!='' THEN excluded.verdict ELSE verdict END,
               final_rec=CASE WHEN excluded.final_rec!='' THEN excluded.final_rec ELSE final_rec END,
               final_verdict=excluded.final_verdict, analysis_src=excluded.analysis_src,
               updated_at=excluded.updated_at
@@ -156,12 +238,19 @@ def save_db_df(df: pd.DataFrame):
               str(r.get("Mainstream / Premier End","")),
               str(r.get("Extended Support End","")),
               str(r.get("Status","Supported")),
+              str(r.get("Min CPU","")),
+              str(r.get("Min RAM","")),
               str(r.get("Notes","")),
               rec,
               str(r.get("Upgrade","N")),
               str(r.get("Replace","N")),
               str(r.get("Primary Alternative","")),
               str(r.get("Secondary Alternative","")),
+              risk_score,
+              str(r.get("Risk Level","")),
+              days_eol,
+              str(r.get("Policy Recommendation","")),
+              str(r.get("Verdict","")),
               fin,
               str(r.get("Final Verdict","")),
               str(r.get("Analysis Source","")),
@@ -172,8 +261,10 @@ def save_db_df(df: pd.DataFrame):
 def load_db_df() -> pd.DataFrame:
     try:
         c = _conn()
-        rows = c.execute("""SELECT db_name,version,db_type,main_end,ext_end,status,notes,
+        rows = c.execute("""SELECT db_name,version,db_type,main_end,ext_end,status,
+               min_cpu,min_ram,notes,
                recommendation,upgrade,replace_flag,primary_alt,secondary_alt,
+               risk_score,risk_level,days_until_eol,policy_rec,verdict,
                final_rec,final_verdict,analysis_src FROM db_versions ORDER BY db_name,version
         """).fetchall()
         c.close()
@@ -181,8 +272,10 @@ def load_db_df() -> pd.DataFrame:
             return pd.DataFrame()
         return pd.DataFrame(rows, columns=[
             "Database","Version","Type","Mainstream / Premier End","Extended Support End",
-            "Status","Notes","Recommendation","Upgrade","Replace",
+            "Status","Min CPU","Min RAM","Notes",
+            "Recommendation","Upgrade","Replace",
             "Primary Alternative","Secondary Alternative",
+            "Risk Score","Risk Level","Days Until EOL","Policy Recommendation","Verdict",
             "Final Recommendation","Final Verdict","Analysis Source"])
     except Exception:
         return pd.DataFrame()
