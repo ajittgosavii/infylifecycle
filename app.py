@@ -855,7 +855,7 @@ if run_a2:
 
 
 # ── Main content: Page-based routing ──────────────────────────────────────────
-_show_strategist = (_cur_page == "Discovery")
+_show_strategist = (_cur_page == "Discovery" and st.session_state.get("show_chat", False))
 
 # ════════════════════════════════════════════════════════════════════════════════
 # DISCOVERY PAGE — Flowchart + Guiding Principles + AI Chat
@@ -988,25 +988,58 @@ if _cur_page == "Discovery":
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # ── Blinking AI Chat Button ──────────────────────────────────────────────
-    _chat_col1, _chat_col2, _chat_col3 = st.columns([2, 3, 2])
-    with _chat_col2:
+    # ── Floating AI Chat Button (bottom-right corner) ────────────────────────
+    # Auto-open chat if user has already started the survey process
+    if a5s not in ("idle",) and not st.session_state.get("show_chat", False):
+        st.session_state["show_chat"] = True
+    _chat_open = st.session_state.get("show_chat", False)
+
+    if not _chat_open:
+        # Show a prominent button in bottom-right area to open the chat
+        st.markdown("<div style='height:2rem;'></div>", unsafe_allow_html=True)
+        _open_col1, _open_col2, _open_col3 = st.columns([3, 2, 1])
+        with _open_col3:
+            if st.button("🧠 AI Advisor\n💬 Click to Start", key="open_chat_btn",
+                         use_container_width=True, type="primary"):
+                st.session_state["show_chat"] = True
+                st.rerun()
+
+        # Inject flashing fixed-position indicator in bottom-right
         st.markdown("""
-        <div style="text-align:center;margin:1rem 0;">
-            <div class="ai-chat-btn" style="display:inline-flex;">
-                <div class="chat-dot"></div>
-                <span>🧠 AI Policy Advisor — Chat with Agent 5</span>
-            </div>
-            <p style="color:#64748B;font-size:0.78rem;margin-top:8px;">
-                Agent 5 will guide you through the migration policy definition
-            </p>
+        <style>
+        .floating-indicator {
+            position: fixed; bottom: 30px; right: 30px; z-index: 9999;
+            background: linear-gradient(135deg, #7C3AED, #9333EA);
+            color: white; border-radius: 50px; padding: 12px 22px;
+            font-size: 0.9rem; font-weight: 700;
+            display: flex; align-items: center; gap: 10px;
+            box-shadow: 0 6px 24px rgba(124,58,237,0.5);
+            animation: float-pulse 2s ease-in-out infinite;
+            pointer-events: none;
+        }
+        @keyframes float-pulse {
+            0%, 100% { box-shadow: 0 6px 24px rgba(124,58,237,0.5); }
+            50% { box-shadow: 0 6px 36px rgba(124,58,237,0.9), 0 0 60px rgba(124,58,237,0.3); }
+        }
+        .float-dot {
+            width: 12px; height: 12px; border-radius: 50%;
+            background: #34D399; animation: fdot 1s infinite;
+        }
+        @keyframes fdot { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
+        </style>
+        <div class="floating-indicator">
+            <div class="float-dot"></div>
+            🧠 AI Advisor — Click above ↑
         </div>
         """, unsafe_allow_html=True)
 
-    st.divider()
-
-    # ── Now render the Agent 5 Strategist flow inline ────────────────────────
-    # (The full Strategist panel code below handles all phases)
+        # Hide the strategist panel below
+        _show_strategist = False
+    else:
+        # Chat is open — show close button
+        if st.button("✕ Close AI Chat", key="close_chat_btn", use_container_width=True):
+            st.session_state["show_chat"] = False
+            st.rerun()
 
 
 # ════════════════════════════════════════════════════════════════════════════════
